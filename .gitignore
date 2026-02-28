@@ -94,7 +94,6 @@ Thumbs.db
 *.h5
 *.hdf5
 
-# App specific data files (Optional: uncomment if you want to ignore them)
-# rois.json
-# tls.json
-# connection.json
+# App specific data files
+*.json
+*.db

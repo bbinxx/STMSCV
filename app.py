@@ -6,19 +6,40 @@ import queue
 import time
 import json
 import os
+import sqlite3
 from ultralytics import YOLO
-from flask import Flask, Response, render_template, request, redirect, url_for
+from flask import Flask, Response, render_template, request, redirect, url_for, jsonify
+
+from detection import process_frame
 
 app = Flask(__name__)
 
 # --- Configuration & Shared State ---
-# Load connection configuration
-CONFIG_FILE = "connection.json"
+# Setup SQLite Database
+DB_FILE = "traffic_data.db"
+
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS rois
+                 (lane TEXT PRIMARY KEY, points TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS config
+                 (key TEXT PRIMARY KEY, value TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS tls
+                 (lane TEXT PRIMARY KEY, actor_id INTEGER)''')
+    conn.commit()
+    conn.close()
+
+init_db()
+
 def load_config():
-    if os.path.exists(CONFIG_FILE):
-        with open(CONFIG_FILE, "r") as f:
-            return json.load(f)
-    return {
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT key, value FROM config")
+    rows = c.fetchall()
+    conn.close()
+    
+    config_data = {
         "carla_host": "localhost",
         "carla_port": 2000,
         "carla_timeout": 10.0,
@@ -27,10 +48,22 @@ def load_config():
         "flask_port": 5050,
         "live_feed_url": "/video_feed"
     }
+    for k, v in rows:
+        if k in ["carla_port", "flask_port"]:
+            config_data[k] = int(v)
+        elif k == "carla_timeout":
+            config_data[k] = float(v)
+        else:
+            config_data[k] = v
+    return config_data
 
 def save_config(config_data):
-    with open(CONFIG_FILE, "w") as f:
-        json.dump(config_data, f, indent=4)
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    for k, v in config_data.items():
+        c.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", (k, str(v)))
+    conn.commit()
+    conn.close()
 
 config = load_config()
 
@@ -54,14 +87,20 @@ current_green_lane = "North" # Default starting lane
 last_switch_time = 0.0
 
 # --- Dynamic Settings Configurations ---
-ROI_CONFIG_FILE = "rois.json"
-TL_CONFIG_FILE = "tls.json"
-
 def load_rois():
-    if os.path.exists(ROI_CONFIG_FILE):
-        with open(ROI_CONFIG_FILE, "r") as f:
-            data = json.load(f)
-            return {k: np.array(v, np.int32) for k, v in data.items()}
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT lane, points FROM rois")
+    rows = c.fetchall()
+    conn.close()
+    
+    if rows:
+        rois = {}
+        for lane, points_str in rows:
+            rois[lane] = np.array(json.loads(points_str), np.int32)
+        return rois
+        
+    # Default fallback if DB is empty
     return {
         "North": np.array([[300, 100], [500, 100], [450, 250], [350, 250]], np.int32),
         "South": np.array([[300, 350], [500, 350], [450, 500], [350, 500]], np.int32),
@@ -70,19 +109,35 @@ def load_rois():
     }
 
 def save_rois():
-    with open(ROI_CONFIG_FILE, "w") as f:
-        data = {k: v.tolist() for k, v in ROIS.items()}
-        json.dump(data, f, indent=4)
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    for lane, points in ROIS.items():
+        c.execute("INSERT OR REPLACE INTO rois (lane, points) VALUES (?, ?)",
+                  (lane, json.dumps(points.tolist())))
+    conn.commit()
+    conn.close()
 
 def load_tls():
-    if os.path.exists(TL_CONFIG_FILE):
-        with open(TL_CONFIG_FILE, "r") as f:
-            return json.load(f)
-    return {"North": None, "South": None, "East": None, "West": None}
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT lane, actor_id FROM tls")
+    rows = c.fetchall()
+    conn.close()
+    
+    tls_data = {"North": None, "South": None, "East": None, "West": None}
+    if rows:
+        for lane, actor_id in rows:
+            tls_data[lane] = int(actor_id) if actor_id is not None else None
+    return tls_data
 
 def save_tls(tls_data):
-    with open(TL_CONFIG_FILE, "w") as f:
-        json.dump(tls_data, f, indent=4)
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    for lane, actor_id in tls_data.items():
+        c.execute("INSERT OR REPLACE INTO tls (lane, actor_id) VALUES (?, ?)",
+                  (lane, actor_id))
+    conn.commit()
+    conn.close()
 
 ROIS = load_rois()
 TL_IDS = load_tls()
@@ -222,53 +277,12 @@ def vision_processing_loop():
         if not image_queue.empty():
             frame = image_queue.get().copy()
             
-            # Reset counts
-            lane_counts = {k: 0 for k in lane_counts}
-            
-            # Draw ROI Polygons
-            for name, points in ROIS.items():
-                pts = points.reshape((-1, 1, 2))
-                cv2.polylines(frame, [pts], isClosed=True, color=(0, 255, 255), thickness=2)
-                # Correctly position text near first point
-                cv2.putText(frame, name, (int(points[0][0]), int(points[0][1] - 5)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
-            
-            # Run YOLO inference
-            # broadened classes: car(2), motorcycle(3), bus(5), truck(7), train(6), ambulance?
-            results = model.predict(frame, classes=[2, 3, 5, 7, 1, 4, 6, 8], conf=0.2, verbose=False)
-            
-            for r in results:
-                for box in r.boxes:
-                    x1, y1, x2, y2 = map(int, box.xyxy[0])
-                    conf = float(box.conf[0])
-                    cls = int(box.cls[0])
-                    name = model.names[cls]
-                    
-                    # Calculate center point
-                    cx = (x1 + x2) // 2
-                    cy = (y1 + y2) // 2
-                    
-                    # Draw a bright debug box for ANY detection
-                    cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 0, 255), 1) # Magenta for visibility
-                    cv2.putText(frame, f"{name} {conf:.2f}", (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 255), 1)
-                    
-                    # Point inside Polygon check for ROIs
-                    for lane_name, points in ROIS.items():
-                        if cv2.pointPolygonTest(points, (cx, cy), False) >= 0:
-                            lane_counts[lane_name] += 1
-                            # Draw prominent Green box for COUNTED vehicles
-                            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                            cv2.circle(frame, (cx, cy), 5, (0, 0, 255), -1)
-                            break 
+            # Run detection logic from external module
+            frame, lane_counts = process_frame(frame, model, ROIS)
             
             # Execute Traffic Light Control Logic
             if global_world is not None:
                 control_traffic_lights_logic(global_world, lane_counts)
-            
-            # Overlay Statistics
-            y_pos = 30
-            for name, count in lane_counts.items():
-                cv2.putText(frame, f"{name} count: {count}", (10, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                y_pos += 30
             
             # Encode for Flask Video Stream
             ret, buffer = cv2.imencode('.jpg', frame)
@@ -316,13 +330,22 @@ def api_camera_status():
 def tl_panel_route():
     global TL_IDS
     if request.method == 'POST':
-        # Accept IDs or default to None if empty
-        TL_IDS['North'] = int(request.form.get('tl_north')) if request.form.get('tl_north') else None
-        TL_IDS['South'] = int(request.form.get('tl_south')) if request.form.get('tl_south') else None
-        TL_IDS['East'] = int(request.form.get('tl_east')) if request.form.get('tl_east') else None
-        TL_IDS['West'] = int(request.form.get('tl_west')) if request.form.get('tl_west') else None
-        save_tls(TL_IDS)
-        return redirect(url_for('tl_panel_route'))
+        if request.is_json:
+            data = request.json
+            TL_IDS['North'] = int(data.get('tl_north')) if data.get('tl_north') else None
+            TL_IDS['South'] = int(data.get('tl_south')) if data.get('tl_south') else None
+            TL_IDS['East'] = int(data.get('tl_east')) if data.get('tl_east') else None
+            TL_IDS['West'] = int(data.get('tl_west')) if data.get('tl_west') else None
+            save_tls(TL_IDS)
+            return jsonify({"status": "success"})
+        else:
+            # Accept IDs or default to None if empty
+            TL_IDS['North'] = int(request.form.get('tl_north')) if request.form.get('tl_north') else None
+            TL_IDS['South'] = int(request.form.get('tl_south')) if request.form.get('tl_south') else None
+            TL_IDS['East'] = int(request.form.get('tl_east')) if request.form.get('tl_east') else None
+            TL_IDS['West'] = int(request.form.get('tl_west')) if request.form.get('tl_west') else None
+            save_tls(TL_IDS)
+            return redirect(url_for('tl_panel_route'))
     
     return render_template('tl_panel.html', tl_ids=TL_IDS)
 
@@ -336,29 +359,47 @@ def roi_panel_route():
         if lane and points and len(points) == 4:
             ROIS[lane] = np.array(points, np.int32)
             save_rois()
-            return {"status": "success"}
-        return {"status": "error", "message": "Invalid point data"}
+            return jsonify({"status": "success"})
+        return jsonify({"status": "error", "message": "Invalid point data"})
         
     # Serialize ROIs for frontend
     serializable_rois = {k: v.tolist() for k, v in ROIS.items()}
-    return render_template('roi_panel.html', current_rois=serializable_rois, config=config)
+    
+    # We return the rois as json here directly instead of rendering a template
+    # Since the frontend script handles fetching config with endpoints now
+    return jsonify({"current_rois": serializable_rois})
 
 @app.route('/panel', methods=['GET', 'POST'])
 def control_panel():
     global config, connection_status
     if request.method == 'POST':
-        action = request.form.get('action')
-        if action == 'save_connect':
-            config['carla_host'] = request.form.get('carla_host', config.get('carla_host'))
-            config['carla_port'] = int(request.form.get('carla_port', config.get('carla_port')))
-            config['carla_timeout'] = float(request.form.get('carla_timeout', config.get('carla_timeout')))
-            config['yolo_model'] = request.form.get('yolo_model', config.get('yolo_model'))
-            config['flask_host'] = request.form.get('flask_host', config.get('flask_host'))
-            config['flask_port'] = int(request.form.get('flask_port', config.get('flask_port')))
-            config['live_feed_url'] = request.form.get('live_feed_url', config.get('live_feed_url'))
-            save_config(config)
-            bg_connect_carla()
-            return redirect(url_for('control_panel'))
+        if request.is_json:
+            data = request.json
+            action = data.get('action')
+            if action == 'save_connect':
+                config['carla_host'] = data.get('carla_host', config.get('carla_host'))
+                config['carla_port'] = int(data.get('carla_port', config.get('carla_port')))
+                config['carla_timeout'] = float(data.get('carla_timeout', config.get('carla_timeout')))
+                config['yolo_model'] = data.get('yolo_model', config.get('yolo_model'))
+                config['flask_host'] = data.get('flask_host', config.get('flask_host'))
+                config['flask_port'] = int(data.get('flask_port', config.get('flask_port')))
+                config['live_feed_url'] = data.get('live_feed_url', config.get('live_feed_url'))
+                save_config(config)
+                bg_connect_carla()
+                return jsonify({"status": "success"})
+        else:
+            action = request.form.get('action')
+            if action == 'save_connect':
+                config['carla_host'] = request.form.get('carla_host', config.get('carla_host'))
+                config['carla_port'] = int(request.form.get('carla_port', config.get('carla_port')))
+                config['carla_timeout'] = float(request.form.get('carla_timeout', config.get('carla_timeout')))
+                config['yolo_model'] = request.form.get('yolo_model', config.get('yolo_model'))
+                config['flask_host'] = request.form.get('flask_host', config.get('flask_host'))
+                config['flask_port'] = int(request.form.get('flask_port', config.get('flask_port')))
+                config['live_feed_url'] = request.form.get('live_feed_url', config.get('live_feed_url'))
+                save_config(config)
+                bg_connect_carla()
+                return redirect(url_for('control_panel'))
     
     return render_template('panel.html', config=config, status=connection_status)
 
