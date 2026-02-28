@@ -21,10 +21,7 @@ const DEFAULT_STATE = {
         carlaHost: '',
         carlaPort: '',
         timeout: '',
-        yolo: '',
-        flaskHost: '0.0.0.0',
-        flaskPort: 5050,
-        feedUrl: ''
+        yolo: ''
     },
     tlIds: { North: '', South: '', East: '', West: '' },
     rois: {},
@@ -314,25 +311,18 @@ function loadConfigToForm() {
     document.getElementById('cfg-carla-port').value = c.carlaPort || '';
     document.getElementById('cfg-timeout').value = c.timeout || '';
     document.getElementById('cfg-yolo').value = c.yolo || '';
-    document.getElementById('cfg-flask-host').value = c.flaskHost || '0.0.0.0';
-    document.getElementById('cfg-flask-port').value = c.flaskPort || 5050;
-    document.getElementById('cfg-feed-url').value = c.feedUrl || '';
     updateTopbarFromConfig();
     updateApiEndpoints();
 }
 
 function saveConfigFromForm() {
     appState.config.carlaHost = document.getElementById('cfg-carla-host').value.trim();
-    appState.config.carlaPort = parseInt(document.getElementById('cfg-carla-port').value, 10);
-    appState.config.timeout = parseFloat(document.getElementById('cfg-timeout').value);
+    appState.config.carlaPort = document.getElementById('cfg-carla-port').value;
+    appState.config.timeout = document.getElementById('cfg-timeout').value;
     appState.config.yolo = document.getElementById('cfg-yolo').value.trim();
-    appState.config.flaskHost = document.getElementById('cfg-flask-host').value.trim();
-    appState.config.flaskPort = parseInt(document.getElementById('cfg-flask-port').value, 10);
-    appState.config.feedUrl = document.getElementById('cfg-feed-url').value.trim();
     saveState();
     updateTopbarFromConfig();
     updateApiEndpoints();
-    updateLiveFeedSrc();
 }
 
 function updateTopbarFromConfig() {
@@ -341,57 +331,47 @@ function updateTopbarFromConfig() {
 }
 
 function updateApiEndpoints() {
-    const c = appState.config;
-    const base = 'http://' + (c.flaskHost === '0.0.0.0' ? 'localhost' : c.flaskHost) + ':' + c.flaskPort;
+    const base = window.location.origin;
     document.getElementById('api-ep-feed').textContent = base + '/api/live_feed';
     document.getElementById('api-ep-counts').textContent = base + '/api/lane_counts';
     document.getElementById('api-ep-cam').textContent = base + '/api/camera/status';
 }
 
 function updateLiveFeedSrc() {
-    const c = appState.config;
-    let feed = c.feedUrl || '/video_feed';
-    if (feed && !feed.startsWith('/') && !feed.includes('://')) {
-        feed = 'http://' + feed + '/api/live_feed';
-    }
     const liveImg = document.getElementById('live-img');
     const roiImg = document.getElementById('roi-img');
-    if (liveImg) liveImg.src = feed;
-    if (roiImg) roiImg.src = feed;
+    if (liveImg) liveImg.src = '/video_feed';
+    if (roiImg) roiImg.src = '/video_feed';
 }
 
-document.getElementById('btn-save-connect').addEventListener('click', () => {
+function handleConnectionCommand(actionName) {
     saveConfigFromForm();
-    toast('Config saved — attempting connection...', 'cyan');
-    addLog('INFO', 'Config saved: ' + appState.config.carlaHost + ':' + appState.config.carlaPort);
+    toast(`${actionName.replace('_', ' ').toUpperCase()}...`, 'cyan');
 
-    // POST properly to server instead of simulating
     fetch('/panel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            action: 'save_connect',
+            action: actionName,
             carla_host: appState.config.carlaHost,
             carla_port: appState.config.carlaPort,
             carla_timeout: appState.config.timeout,
-            yolo_model: appState.config.yolo,
-            flask_host: appState.config.flaskHost,
-            flask_port: appState.config.flaskPort,
-            live_feed_url: appState.config.feedUrl
+            yolo_model: appState.config.yolo
         })
     }).then(r => r.json()).then(data => {
+        toast(data.message || 'Success', data.status === 'success' ? 'green' : 'red');
         if (data.status === 'success') {
-            toast('CARLA connection request sent', 'green');
-            addLog('OK', 'Connect request dispatched');
-            document.getElementById('sb-conn').classList.add('connected');
-        } else {
-            toast('Failed to save config', 'red');
-            addLog('ERR', 'Could not save configurations.');
+            if (actionName === 'toggle_connect') {
+                // Backend handles the flip, we just wait for poll to update visuals
+            }
         }
     }).catch(() => {
         toast('Network Error', 'red');
     });
-});
+}
+
+document.getElementById('btn-save-only').addEventListener('click', () => handleConnectionCommand('save_only'));
+document.getElementById('btn-toggle-connect').addEventListener('click', () => handleConnectionCommand('toggle_connect'));
 
 loadConfigToForm();
 
@@ -404,11 +384,8 @@ function loadExternalConfig() {
             appState.config.carlaPort = data.carla_port || '';
             appState.config.timeout = data.carla_timeout || '';
             appState.config.yolo = data.yolo_model || '';
-            appState.config.flaskHost = data.flask_host || '0.0.0.0';
-            appState.config.flaskPort = data.flask_port || 5050;
-            appState.config.feedUrl = data.live_feed_url || '';
             saveState();
-            loadConfigToForm(); // Repopulate fields with clean fetched data
+            loadConfigToForm();
         })
         .catch(err => console.error("Could not fetch initial Config", err));
 }
@@ -559,40 +536,130 @@ document.getElementById('roi-save-btn').addEventListener('click', () => {
     }
     const lane = document.getElementById('roi-lane').value;
     const img = document.getElementById('roi-img');
-    // Convert display coords to natural
     const sx = (img.naturalWidth || roiCanvas.width) / roiCanvas.width;
     const sy = (img.naturalHeight || roiCanvas.height) / roiCanvas.height;
     const pts = roiPoints.map(p => [Math.round(p.x * sx), Math.round(p.y * sy)]);
 
-    // Update local state temporarily
     appState.rois[lane] = pts;
     roiPoints = [];
     drawROIScene();
 
-    const s = document.getElementById('roi-status');
-    if (s) s.textContent = 'SAVING ' + lane.toUpperCase() + ' ROI TO DB...';
-
-    // Post to server
     fetch('/roi_panel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ lane, points: pts })
     }).then(r => r.json()).then(data => {
-        if (data.status === 'success') {
-            saveState();
-            toast('ROI updated in Database for ' + lane, 'green');
-            addLog('OK', 'ROI DB config saved: ' + lane);
-            if (s) s.textContent = 'ROI FOR ' + lane.toUpperCase() + ' SYNCED TO DB';
-        } else {
-            toast('Failed to save ROI to DB', 'red');
-            addLog('ERR', 'ROI DB Sync failed');
-        }
-    }).catch(() => {
-        toast('Network Error during ROI save', 'red');
+        toast(data.message || 'ROI saved localy', data.status === 'success' ? 'green' : 'red');
     });
 });
 
-// Load external ROIs from db on Init
+document.getElementById('roi-save-set-btn').addEventListener('click', () => {
+    const name = document.getElementById('roi-set-name').value.trim();
+    if (!name) { toast("Enter a set name", "red"); return; }
+
+    const serializable = {};
+    for (let l in appState.rois) {
+        serializable[l] = appState.rois[l];
+    }
+
+    fetch('/api/roi_sets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name, config: serializable })
+    }).then(r => r.json()).then(data => {
+        toast(data.message, data.status === 'success' ? 'green' : 'red');
+        refreshRoiSetsList();
+    });
+});
+
+function refreshRoiSetsList() {
+    fetch('/api/roi_sets')
+        .then(r => r.json())
+        .then(data => {
+            const list = document.getElementById('roi-sets-list');
+            list.innerHTML = '';
+            if (!data.sets || data.sets.length === 0) {
+                list.innerHTML = '<span class="form-hint">No saved sets...</span>';
+                return;
+            }
+            data.sets.forEach(s => {
+                const item = document.createElement('div');
+                item.className = 'api-row';
+                item.style.cursor = 'pointer';
+                item.style.marginBottom = '4px';
+                item.textContent = s;
+                item.onclick = () => {
+                    document.getElementById('roi-set-name').value = s;
+                };
+                list.appendChild(item);
+            });
+        });
+}
+
+document.getElementById('roi-load-btn').addEventListener('click', () => {
+    const name = document.getElementById('roi-set-title') || document.getElementById('roi-set-name').value;
+    if (!name) return;
+    fetch(`/api/roi_sets/${name}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.status === 'success') {
+                appState.rois = {};
+                for (let l in data.rois) appState.rois[l] = data.rois[l];
+                drawROIScene();
+                toast(data.message, 'green');
+            } else {
+                toast(data.message, 'red');
+            }
+        });
+});
+
+// ─── TRAFFIC LIGHTS ──────────────────────────────────────────
+document.getElementById('btn-update-tl').addEventListener('click', () => {
+    const data = {
+        tl_north: document.getElementById('tl-north').value,
+        tl_south: document.getElementById('tl-south').value,
+        tl_east: document.getElementById('tl-east').value,
+        tl_west: document.getElementById('tl-west').value
+    };
+
+    fetch('/tl_panel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+    }).then(r => r.json()).then(res => {
+        toast(res.status === 'success' ? 'TL Bindings Updated' : 'Update Failed', res.status === 'success' ? 'green' : 'red');
+        if (res.status === 'success') {
+            appState.tlIds.North = data.tl_north;
+            appState.tlIds.South = data.tl_south;
+            appState.tlIds.East = data.tl_east;
+            appState.tlIds.West = data.tl_west;
+            saveState();
+            // Update UI IDs
+            ['North', 'South', 'East', 'West'].forEach(l => {
+                const el = document.getElementById(`tl-id-${l}`);
+                if (el) el.textContent = data[`tl_${l.toLowerCase()}`] || '--';
+            });
+        }
+    });
+});
+
+function loadExternalTLs() {
+    fetch('/tl_panel', { headers: { 'Accept': 'application/json' } })
+        .then(r => r.json())
+        .then(data => {
+            if (data.tl_ids) {
+                appState.tlIds = data.tl_ids;
+                saveState();
+                ['North', 'South', 'East', 'West'].forEach(l => {
+                    const inp = document.getElementById(`tl-${l.toLowerCase()}`);
+                    if (inp) inp.value = data.tl_ids[l] || '';
+                    const el = document.getElementById(`tl-id-${l}`);
+                    if (el) el.textContent = data.tl_ids[l] || '--';
+                });
+            }
+        });
+}
+
 function loadExternalROIs() {
     fetch('/roi_panel')
         .then(r => r.json())
@@ -601,54 +668,64 @@ function loadExternalROIs() {
                 appState.rois = data.current_rois;
                 drawROIScene();
                 saveState();
-                addLog('INFO', 'Loaded ROIs from database automatically');
             }
-        })
-        .catch(err => console.error("Could not fetch initial ROIs", err));
+        });
+    refreshRoiSetsList();
 }
 
 loadExternalROIs();
-
+loadExternalTLs();
 // ─── LIVE STATS POLLING ──────────────────────────────────────
 let phaseMax = 30;
 
 function updateDashboardStats(data) {
-    const counts = data.counts || {};
-    const greenLane = data.green_lane || null;
-    const timer = data.timer ?? '--';
+    const isConn = data.connection === "Connected";
+    const counts = isConn ? (data.counts || {}) : { North: 0, South: 0, East: 0, West: 0 };
+    const greenLane = isConn ? data.green_lane : null;
+    const timer = isConn ? data.timer : 0;
 
+    let total = 0;
     ['North', 'South', 'East', 'West'].forEach(lane => {
-        const countEl = document.getElementById('count-' + lane);
-        if (countEl) countEl.textContent = counts[lane] ?? 0;
+        const val = counts[lane] || 0;
+        total += val;
+        const el = document.getElementById('count-' + lane);
+        if (el) el.textContent = val;
+
+        // Active indicator on card
         const card = document.getElementById('lane-card-' + lane);
-        if (card) card.classList.toggle('active', lane === greenLane);
+        if (card) {
+            if (isConn && lane === greenLane) card.classList.add('active');
+            else card.classList.remove('active');
+        }
     });
 
-    // Topbar
-    const total = Object.values(counts).reduce((s, v) => s + (v || 0), 0);
     document.getElementById('tb-total-veh').textContent = total;
-    document.getElementById('tb-phase-lane').textContent = greenLane || '--';
-    document.getElementById('tb-cycle-timer').textContent = timer + 's';
+    updatePhaseVisuals(greenLane, timer);
+}
 
-    // Phase bar
-    const phTimer = parseFloat(timer);
-    if (!isNaN(phTimer)) {
-        if (phTimer > phaseMax) phaseMax = phTimer;
-        const pct = Math.max(0, Math.min(100, (phTimer / phaseMax) * 100));
+function updatePhaseVisuals(greenLane, timer) {
+    const isConn = !!greenLane;
+    const phTimer = timer;
+    if (isConn) {
+        let pct = (phTimer / 30) * 100;
         document.getElementById('ph-bar').style.width = pct + '%';
+        document.getElementById('ph-timer').textContent = phTimer + 's';
+        document.getElementById('ph-lane').textContent = greenLane.toUpperCase();
+    } else {
+        document.getElementById('ph-bar').style.width = '0%';
+        document.getElementById('ph-timer').textContent = '--s';
+        document.getElementById('ph-lane').textContent = '--';
     }
-    document.getElementById('ph-timer').textContent = timer + 's';
-    document.getElementById('ph-lane').textContent = greenLane || '--';
+
+    // Update Topbar
+    document.getElementById('tb-phase-lane').textContent = isConn ? greenLane.toUpperCase() : '--';
+    document.getElementById('tb-cycle-timer').textContent = isConn ? phTimer + 's' : '--s';
 
     // Update TL visuals
     ['North', 'South', 'East', 'West'].forEach(lane => {
-        const isGreen = lane === greenLane;
+        const isGreen = isConn && lane === greenLane;
         setTLState(lane, isGreen ? 'green' : 'red');
     });
-
-    // Timer color
-    const timerEl = document.getElementById('tb-cycle-timer');
-    timerEl.className = 'tb-stat-value ' + (phTimer <= 5 ? 'yellow' : '');
 }
 
 function setTLState(lane, state) {
@@ -665,30 +742,48 @@ function pollStats() {
         .then(r => r.json())
         .then(data => {
             updateDashboardStats(data);
-            // update CARLA status display
-            setCarlaStatus(true);
+            setCarlaStatus(data.connection);
         })
         .catch(() => {
-            setCarlaStatus(false);
+            setCarlaStatus("Disconnected");
+            // Clear stats on network error
+            updateDashboardStats({ connection: "Disconnected" });
         });
 }
 
-function setCarlaStatus(online) {
+function setCarlaStatus(statusString) {
     const dot = document.getElementById('dot-carla');
     const txt = document.getElementById('stat-carla');
     const tbEl = document.getElementById('tb-carla-status');
-    if (online) {
+    const connBtn = document.getElementById('sb-conn');
+    const toggleBtn = document.getElementById('btn-toggle-connect');
+
+    const isConnected = statusString === "Connected";
+    const isConnecting = statusString === "Connecting...";
+
+    txt.textContent = statusString.toUpperCase();
+    tbEl.textContent = statusString.toUpperCase();
+
+    if (toggleBtn) {
+        toggleBtn.textContent = isConnected ? "DISCONNECT" : (isConnecting ? "CONNECTING..." : "CONNECT");
+        toggleBtn.className = isConnected ? "btn btn-red" : "btn btn-green";
+    }
+
+    if (isConnected) {
         dot.className = 'dot green';
-        txt.textContent = 'ONLINE';
         txt.style.color = 'var(--green)';
         tbEl.className = 'tb-stat-value green';
-        tbEl.textContent = 'ONLINE';
+        if (connBtn) connBtn.classList.add('connected');
+    } else if (isConnecting) {
+        dot.className = 'dot yellow';
+        txt.style.color = 'var(--yellow)';
+        tbEl.className = 'tb-stat-value yellow';
+        if (connBtn) connBtn.classList.remove('connected');
     } else {
         dot.className = 'dot red';
-        txt.textContent = 'OFFLINE';
         txt.style.color = 'var(--red)';
         tbEl.className = 'tb-stat-value red';
-        tbEl.textContent = 'OFFLINE';
+        if (connBtn) connBtn.classList.remove('connected');
     }
 }
 
