@@ -544,22 +544,51 @@ document.getElementById('roi-save-btn').addEventListener('click', () => {
     const sx = (img.naturalWidth || roiCanvas.width) / roiCanvas.width;
     const sy = (img.naturalHeight || roiCanvas.height) / roiCanvas.height;
     const pts = roiPoints.map(p => [Math.round(p.x * sx), Math.round(p.y * sy)]);
+
+    // Update local state temporarily
     appState.rois[lane] = pts;
     roiPoints = [];
     drawROIScene();
-    saveState();
-    toast('ROI saved for ' + lane + ' lane', 'green');
-    addLog('OK', 'ROI defined: ' + lane + ' [' + pts.map(p => p.join(',')).join(' | ') + ']');
-    const s = document.getElementById('roi-status');
-    if (s) s.textContent = 'ROI FOR ' + lane.toUpperCase() + ' SAVED';
 
-    // Post to server if available
+    const s = document.getElementById('roi-status');
+    if (s) s.textContent = 'SAVING ' + lane.toUpperCase() + ' ROI TO DB...';
+
+    // Post to server
     fetch('/roi_panel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ lane, points: pts })
-    }).catch(() => { });
+    }).then(r => r.json()).then(data => {
+        if (data.status === 'success') {
+            saveState();
+            toast('ROI updated in Database for ' + lane, 'green');
+            addLog('OK', 'ROI DB config saved: ' + lane);
+            if (s) s.textContent = 'ROI FOR ' + lane.toUpperCase() + ' SYNCED TO DB';
+        } else {
+            toast('Failed to save ROI to DB', 'red');
+            addLog('ERR', 'ROI DB Sync failed');
+        }
+    }).catch(() => {
+        toast('Network Error during ROI save', 'red');
+    });
 });
+
+// Load external ROIs from db on Init
+function loadExternalROIs() {
+    fetch('/roi_panel')
+        .then(r => r.json())
+        .then(data => {
+            if (data.current_rois) {
+                appState.rois = data.current_rois;
+                drawROIScene();
+                saveState();
+                addLog('INFO', 'Loaded ROIs from database automatically');
+            }
+        })
+        .catch(err => console.error("Could not fetch initial ROIs", err));
+}
+
+loadExternalROIs();
 
 // ─── LIVE STATS POLLING ──────────────────────────────────────
 let phaseMax = 30;
