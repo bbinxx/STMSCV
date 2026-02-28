@@ -18,12 +18,12 @@ const DEFAULT_STATE = {
         'win-api': { x: 600, y: 60, w: 380, h: 420, open: false, pinned: false },
     },
     config: {
-        carlaHost: 'localhost',
-        carlaPort: 2000,
-        timeout: 10,
-        yolo: 'yolov8n.pt',
+        carlaHost: '',
+        carlaPort: '',
+        timeout: '',
+        yolo: '',
         flaskHost: '0.0.0.0',
-        flaskPort: 5000,
+        flaskPort: 5050,
         feedUrl: ''
     },
     tlIds: { North: '', South: '', East: '', West: '' },
@@ -310,12 +310,12 @@ updateSidebarBtns();
 // ─── CONFIG FORM ─────────────────────────────────────────────
 function loadConfigToForm() {
     const c = appState.config;
-    document.getElementById('cfg-carla-host').value = c.carlaHost || 'localhost';
-    document.getElementById('cfg-carla-port').value = c.carlaPort || 2000;
-    document.getElementById('cfg-timeout').value = c.timeout || 10;
-    document.getElementById('cfg-yolo').value = c.yolo || 'yolov8n.pt';
+    document.getElementById('cfg-carla-host').value = c.carlaHost || '';
+    document.getElementById('cfg-carla-port').value = c.carlaPort || '';
+    document.getElementById('cfg-timeout').value = c.timeout || '';
+    document.getElementById('cfg-yolo').value = c.yolo || '';
     document.getElementById('cfg-flask-host').value = c.flaskHost || '0.0.0.0';
-    document.getElementById('cfg-flask-port').value = c.flaskPort || 5000;
+    document.getElementById('cfg-flask-port').value = c.flaskPort || 5050;
     document.getElementById('cfg-feed-url').value = c.feedUrl || '';
     updateTopbarFromConfig();
     updateApiEndpoints();
@@ -337,7 +337,7 @@ function saveConfigFromForm() {
 
 function updateTopbarFromConfig() {
     const c = appState.config;
-    document.getElementById('tb-host').textContent = (c.carlaHost || 'localhost') + ':' + (c.carlaPort || 2000);
+    document.getElementById('tb-host').textContent = (c.carlaHost || '--') + ':' + (c.carlaPort || '--');
 }
 
 function updateApiEndpoints() {
@@ -394,6 +394,25 @@ document.getElementById('btn-save-connect').addEventListener('click', () => {
 });
 
 loadConfigToForm();
+
+// Load external Config from DB on Init
+function loadExternalConfig() {
+    fetch('/api/config')
+        .then(r => r.json())
+        .then(data => {
+            appState.config.carlaHost = data.carla_host || '';
+            appState.config.carlaPort = data.carla_port || '';
+            appState.config.timeout = data.carla_timeout || '';
+            appState.config.yolo = data.yolo_model || '';
+            appState.config.flaskHost = data.flask_host || '0.0.0.0';
+            appState.config.flaskPort = data.flask_port || 5050;
+            appState.config.feedUrl = data.live_feed_url || '';
+            saveState();
+            loadConfigToForm(); // Repopulate fields with clean fetched data
+        })
+        .catch(err => console.error("Could not fetch initial Config", err));
+}
+loadExternalConfig();
 
 // ─── TRAFFIC LIGHT MAPPING ───────────────────────────────────
 function loadTLForm() {

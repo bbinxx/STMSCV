@@ -40,18 +40,18 @@ def load_config():
     conn.close()
     
     config_data = {
-        "carla_host": "localhost",
-        "carla_port": 2000,
-        "carla_timeout": 10.0,
-        "yolo_model": "yolov8n.pt",
+        "carla_host": "",
+        "carla_port": "",
+        "carla_timeout": "",
+        "yolo_model": "",
         "flask_host": "0.0.0.0",
         "flask_port": 5050,
-        "live_feed_url": "/video_feed"
+        "live_feed_url": ""
     }
     for k, v in rows:
-        if k in ["carla_port", "flask_port"]:
+        if k in ["carla_port", "flask_port"] and str(v).strip():
             config_data[k] = int(v)
-        elif k == "carla_timeout":
+        elif k == "carla_timeout" and str(v).strip():
             config_data[k] = float(v)
         else:
             config_data[k] = v
@@ -68,8 +68,8 @@ def save_config(config_data):
 config = load_config()
 
 # YOLOv8 model initialization
-MODEL_PATH = config.get("yolo_model", "yolov8n.pt")
-model = YOLO(MODEL_PATH)
+MODEL_PATH = config.get("yolo_model", "")
+model = YOLO(MODEL_PATH) if MODEL_PATH else None
 
 # Thread-safe queue for CARLA camera images
 image_queue = queue.Queue(maxsize=1)
@@ -101,12 +101,7 @@ def load_rois():
         return rois
         
     # Default fallback if DB is empty
-    return {
-        "North": np.array([[300, 100], [500, 100], [450, 250], [350, 250]], np.int32),
-        "South": np.array([[300, 350], [500, 350], [450, 500], [350, 500]], np.int32),
-        "East":  np.array([[550, 250], [700, 250], [600, 350], [500, 350]], np.int32),
-        "West":  np.array([[100, 250], [250, 250], [300, 350], [200, 350]], np.int32)
-    }
+    return {}
 
 def save_rois():
     conn = sqlite3.connect(DB_FILE)
@@ -169,11 +164,15 @@ def setup_carla_task():
             except:
                 pass
                 
-        host = config.get("carla_host", "localhost")
-        port = config.get("carla_port", 2000)
-        timeout = config.get("carla_timeout", 5.0)
-        client = carla.Client(host, port)
-        client.set_timeout(timeout)
+        host = config.get("carla_host")
+        port = config.get("carla_port")
+        if not host or not port:
+            connection_status = "Waiting for configuration in Control Panel"
+            return
+            
+        timeout = config.get("carla_timeout") or 5.0
+        client = carla.Client(str(host), int(port))
+        client.set_timeout(float(timeout))
         world = client.get_world()
         
         # Locate RGB camera blueprint
@@ -235,6 +234,9 @@ def control_traffic_lights_logic(world, counts):
     """Timed logic: Switch to highest density lane every 30 seconds"""
     global current_green_lane, last_switch_time
     
+    if not counts:
+        return
+        
     current_time = time.time()
     
     # Check if it's time to re-evaluate (30 second intervals)
@@ -325,6 +327,11 @@ def api_camera_status():
     global global_camera
     status = "active" if global_camera is not None else "inactive"
     return json.dumps({"status": status, "timestamp": time.time()})
+
+@app.route('/api/config')
+def api_get_config():
+    global config
+    return jsonify(config)
 
 @app.route('/tl_panel', methods=['GET', 'POST'])
 def tl_panel_route():
