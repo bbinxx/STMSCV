@@ -338,10 +338,12 @@ function updateApiEndpoints() {
 }
 
 function updateLiveFeedSrc() {
+    console.log("[DEBUG] Initializing Live Feed UI sources");
     const liveImg = document.getElementById('live-img');
     const roiImg = document.getElementById('roi-img');
-    if (liveImg) liveImg.src = '/video_feed';
-    if (roiImg) roiImg.src = '/video_feed';
+    const timestamp = new Date().getTime();
+    if (liveImg) liveImg.src = '/video_feed?t=' + timestamp;
+    if (roiImg) roiImg.src = '/video_feed?t=' + timestamp;
 }
 
 function handleConnectionCommand(actionName) {
@@ -396,8 +398,6 @@ function loadTLForm() {
     ['North', 'South', 'East', 'West'].forEach(lane => {
         const el = document.getElementById('tl-' + lane.toLowerCase());
         if (el) el.value = appState.tlIds[lane] || '';
-        const idEl = document.getElementById('tl-id-' + lane);
-        if (idEl) idEl.textContent = appState.tlIds[lane] ? '#' + appState.tlIds[lane] : '--';
     });
 }
 
@@ -410,7 +410,7 @@ document.getElementById('btn-update-tl').addEventListener('click', () => {
     });
     saveState();
 
-    // POST to backend
+    // POST to backend for validation and storage
     fetch('/tl_panel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -421,15 +421,27 @@ document.getElementById('btn-update-tl').addEventListener('click', () => {
             tl_west: appState.tlIds.West || null
         })
     }).then(r => r.json()).then(data => {
-        if (data.status === 'success') {
-            toast('Traffic light bindings updated', 'green');
-            addLog('OK', 'TL actor IDs updated: N=' + appState.tlIds.North +
-                ' S=' + appState.tlIds.South + ' E=' + appState.tlIds.East + ' W=' + appState.tlIds.West);
-        } else {
-            toast('Failed to update bindngs', 'red');
-        }
+        toast(data.message || 'Bindings updated', data.status === 'success' ? 'green' : 'red');
     }).catch(() => toast('Network Error', 'red'));
 });
+
+// Manual TL Test Helper for R/Y/G buttons
+window.testTL = function (lane, state) {
+    const actorId = document.getElementById('tl-' + lane.toLowerCase()).value;
+    if (!actorId) {
+        toast("Enter an Actor ID first", "red");
+        return;
+    }
+    toast(`Testing ${lane}:${actorId} -> ${state.toUpperCase()}...`, 'cyan');
+
+    fetch('/api/tl_test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ actor_id: actorId, state: state })
+    }).then(r => r.json()).then(data => {
+        toast(data.message, data.status === 'success' ? 'green' : 'red');
+    }).catch(() => toast("Test Request Failed", "red"));
+};
 
 loadTLForm();
 
@@ -441,15 +453,30 @@ let roiPoints = [];
 function resizeROICanvas() {
     const img = document.getElementById('roi-img');
     if (!roiCanvas || !img) return;
-    roiCanvas.width = img.offsetWidth;
-    roiCanvas.height = img.offsetHeight;
-    drawROIScene();
+
+    // Use clientWidth/Height of the container or the image's displayed size
+    const w = img.clientWidth || img.width;
+    const h = img.clientHeight || img.height;
+
+    if (w > 0 && h > 0) {
+        roiCanvas.width = w;
+        roiCanvas.height = h;
+        drawROIScene();
+    }
 }
 
 const roiImg = document.getElementById('roi-img');
-if (roiImg) roiImg.addEventListener('load', () => setTimeout(resizeROICanvas, 100));
+if (roiImg) {
+    roiImg.addEventListener('load', () => resizeROICanvas());
+    // Also poll slightly because offsetWidth can be 0 if window is display:none when it loads
+    setInterval(() => {
+        if (roiCanvas && roiCanvas.width !== roiImg.clientWidth && roiImg.clientWidth > 0) {
+            resizeROICanvas();
+        }
+    }, 1000);
+}
 window.addEventListener('resize', resizeROICanvas);
-setTimeout(resizeROICanvas, 600);
+setTimeout(resizeROICanvas, 500);
 
 function drawROIScene() {
     if (!roiCtx) return;
@@ -627,7 +654,10 @@ document.getElementById('btn-update-tl').addEventListener('click', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
     }).then(r => r.json()).then(res => {
-        toast(res.status === 'success' ? 'TL Bindings Updated' : 'Update Failed', res.status === 'success' ? 'green' : 'red');
+        // Show actual server message in toast (e.g. invalid actor ID warning)
+        const toastMsg = res.message || (res.status === 'success' ? 'TL Bindings Updated' : 'Update Failed');
+        toast(toastMsg, res.status === 'success' ? 'green' : 'red');
+
         if (res.status === 'success') {
             appState.tlIds.North = data.tl_north;
             appState.tlIds.South = data.tl_south;
@@ -700,13 +730,17 @@ function updateDashboardStats(data) {
     });
 
     document.getElementById('tb-total-veh').textContent = total;
-    updatePhaseVisuals(greenLane, timer);
+    updatePhaseVisuals(data);
 }
 
-function updatePhaseVisuals(greenLane, timer) {
-    const isConn = !!greenLane;
-    const phTimer = timer;
-    if (isConn) {
+function updatePhaseVisuals(data) {
+    const isConn = data.connection === "Connected";
+    const greenLane = data.green_lane;
+    const phTimer = data.timer;
+    const tlStates = data.tl_states || {};
+    const counts = data.counts || {};
+
+    if (isConn && greenLane) {
         let pct = (phTimer / 30) * 100;
         document.getElementById('ph-bar').style.width = pct + '%';
         document.getElementById('ph-timer').textContent = phTimer + 's';
@@ -718,13 +752,17 @@ function updatePhaseVisuals(greenLane, timer) {
     }
 
     // Update Topbar
-    document.getElementById('tb-phase-lane').textContent = isConn ? greenLane.toUpperCase() : '--';
-    document.getElementById('tb-cycle-timer').textContent = isConn ? phTimer + 's' : '--s';
+    document.getElementById('tb-phase-lane').textContent = (isConn && greenLane) ? greenLane.toUpperCase() : '--';
+    document.getElementById('tb-cycle-timer').textContent = (isConn && phTimer !== undefined) ? phTimer + 's' : '--s';
 
-    // Update TL visuals
+    // Update TL Visual States and Counts
     ['North', 'South', 'East', 'West'].forEach(lane => {
-        const isGreen = isConn && lane === greenLane;
-        setTLState(lane, isGreen ? 'green' : 'red');
+        const state = tlStates[lane] || 'red';
+        setTLState(lane, state);
+
+        // Show current count in the Mapping window's Visual State box (matching user's screenshot)
+        const idEl = document.getElementById('tl-id-' + lane);
+        if (idEl) idEl.textContent = counts[lane] !== undefined ? counts[lane] : '--';
     });
 }
 
@@ -737,14 +775,28 @@ function setTLState(lane, state) {
     });
 }
 
+let lastBackendStatus = true;
+let lastFeedStatus = "NO SIGNAL";
+
 function pollStats() {
     fetch('/api/lane_counts')
         .then(r => r.json())
         .then(data => {
+            if (!lastBackendStatus || (lastFeedStatus === "NO SIGNAL" && data.feed_status === "ONLINE")) {
+                // Backend recovered, OR feed came online. Reload the stream to fix frozen MJPEG
+                console.log("[DEBUG] Connection recovered or Feed came Online, reloading Live Feed...");
+                updateLiveFeedSrc();
+                lastBackendStatus = true;
+            }
+            lastFeedStatus = data.feed_status;
+
             updateDashboardStats(data);
             setCarlaStatus(data.connection);
+            setDetectionStatus(data.detect_status);
+            setFeedStatus(data.feed_status);
         })
         .catch(() => {
+            lastBackendStatus = false;
             setCarlaStatus("Disconnected");
             // Clear stats on network error
             updateDashboardStats({ connection: "Disconnected" });
@@ -761,8 +813,8 @@ function setCarlaStatus(statusString) {
     const isConnected = statusString === "Connected";
     const isConnecting = statusString === "Connecting...";
 
-    txt.textContent = statusString.toUpperCase();
-    tbEl.textContent = statusString.toUpperCase();
+    if (txt) txt.textContent = statusString.toUpperCase();
+    if (tbEl) tbEl.textContent = statusString.toUpperCase();
 
     if (toggleBtn) {
         toggleBtn.textContent = isConnected ? "DISCONNECT" : (isConnecting ? "CONNECTING..." : "CONNECT");
@@ -770,20 +822,51 @@ function setCarlaStatus(statusString) {
     }
 
     if (isConnected) {
-        dot.className = 'dot green';
-        txt.style.color = 'var(--green)';
-        tbEl.className = 'tb-stat-value green';
+        if (dot) dot.className = 'dot green';
+        if (txt) txt.style.color = 'var(--green)';
+        if (tbEl) tbEl.className = 'tb-stat-value green';
         if (connBtn) connBtn.classList.add('connected');
     } else if (isConnecting) {
-        dot.className = 'dot yellow';
-        txt.style.color = 'var(--yellow)';
-        tbEl.className = 'tb-stat-value yellow';
+        if (dot) dot.className = 'dot yellow';
+        if (txt) txt.style.color = 'var(--yellow)';
+        if (tbEl) tbEl.className = 'tb-stat-value yellow';
         if (connBtn) connBtn.classList.remove('connected');
     } else {
-        dot.className = 'dot red';
-        txt.style.color = 'var(--red)';
-        tbEl.className = 'tb-stat-value red';
+        if (dot) dot.className = 'dot red';
+        if (txt) txt.style.color = 'var(--red)';
+        if (tbEl) tbEl.className = 'tb-stat-value red';
         if (connBtn) connBtn.classList.remove('connected');
+    }
+}
+
+function setDetectionStatus(status) {
+    const dot = document.getElementById('dot-detect');
+    const txt = document.getElementById('stat-detect');
+    if (!dot || !txt) return;
+    txt.textContent = status.toUpperCase();
+    if (status === "ACTIVE") {
+        dot.className = 'dot green';
+        txt.style.color = 'var(--green)';
+    } else {
+        dot.className = 'dot';
+        txt.style.color = 'var(--text-dim)';
+    }
+}
+
+function setFeedStatus(status) {
+    const dot = document.getElementById('dot-feed');
+    const txt = document.getElementById('stat-feed');
+    if (!dot || !txt) return;
+    txt.textContent = status.toUpperCase();
+    if (status === "ONLINE") {
+        dot.className = 'dot green';
+        txt.style.color = 'var(--green)';
+    } else if (status === "STREAMING") {
+        dot.className = 'dot cyan';
+        txt.style.color = 'var(--cyan)';
+    } else {
+        dot.className = 'dot';
+        txt.style.color = 'var(--text-dim)';
     }
 }
 

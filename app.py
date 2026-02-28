@@ -10,7 +10,7 @@ import sqlite3
 from ultralytics import YOLO
 from flask import Flask, Response, render_template, request, redirect, url_for, jsonify
 
-from detection import process_frame
+from detection import process_frame, control_traffic_lights_logic, get_automation_data
 
 app = Flask(__name__)
 
@@ -47,16 +47,23 @@ def load_config():
         "carla_timeout": "",
         "yolo_model": "",
         "flask_host": "0.0.0.0",
-        "flask_port": 5000,
+        "flask_port": 5050,
         "live_feed_url": ""
     }
     for k, v in rows:
         if k in ["carla_port", "flask_port"] and str(v).strip():
-            config_data[k] = int(v)
+            val = int(v)
+            # FORCE 5050 if 5000 is detected due to user project conflict
+            if k == "flask_port" and val == 5000:
+                val = 5050
+            config_data[k] = val
         elif k == "carla_timeout" and str(v).strip():
             config_data[k] = float(v)
         else:
             config_data[k] = v
+    # Final safety override
+    if config_data["flask_port"] == 5000:
+        config_data["flask_port"] = 5050
     return config_data
 
 def save_config(config_data):
@@ -69,9 +76,35 @@ def save_config(config_data):
 
 config = load_config()
 
-# YOLOv8 model initialization
-MODEL_PATH = config.get("yolo_model", "")
-model = YOLO(MODEL_PATH) if MODEL_PATH else None
+# YOLOv8 model loading helper
+model = None
+def load_yolo_model(path):
+    global model
+    if not path or not str(path).strip():
+        model = None
+        print("[INIT] YOLO model path is empty, detection DISABLED", flush=True)
+        return False
+    
+    # Resolve path relative to script directory
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    res_path = os.path.abspath(os.path.join(base_dir, path))
+    
+    if not os.path.exists(res_path):
+        print(f"[ERR] YOLO model file not found at: {res_path}", flush=True)
+        model = None
+        return False
+        
+    try:
+        model = YOLO(res_path)
+        print(f"[INIT] YOLO model loaded successfully: {res_path}", flush=True)
+        return True
+    except Exception as e:
+        print(f"[ERR] Failed to load YOLO ({res_path}): {e}", flush=True)
+        model = None
+        return False
+
+# Initial load
+load_yolo_model(config.get("yolo_model", ""))
 
 # Thread-safe queue for CARLA camera images
 image_queue = queue.Queue(maxsize=1)
@@ -79,14 +112,19 @@ image_queue = queue.Queue(maxsize=1)
 # Global states for Flask streaming and tracking
 latest_frame = None
 lane_counts = {"North": 0, "South": 0, "East": 0, "West": 0}
+last_process_time = 0.0
+
+# Global blank frame for standby
+_blank_img = np.zeros((360, 640, 3), np.uint8)
+cv2.putText(_blank_img, "SIGNAL STANDBY", (210, 180), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 70, 255), 2)
+_, _blank_jpeg = cv2.imencode('.jpg', _blank_img)
+BLANK_FRAME_BYTES = _blank_jpeg.tobytes()
 
 global_world = None
 global_camera = None
 connection_status = "Disconnected"
 
-# Traffic Light Timer State
-current_green_lane = "North" # Default starting lane
-last_switch_time = 0.0
+# Global automation state now handled by detection module
 
 # --- Dynamic Settings Configurations ---
 def load_rois():
@@ -142,17 +180,25 @@ TL_IDS = load_tls()
 # --- 1. NATIVE CARLA VIDEO INPUT ---
 def carla_sensor_callback(image):
     """Callback triggered every time the CARLA camera generates a new image"""
-    array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
-    array = np.reshape(array, (image.height, image.width, 4))
-    array = array[:, :, :3] # Keep BGR channels (CARLA outputs BGRA, OpenCV uses BGR)
-    
-    # Store in queue, dropping oldest if full to maintain real-time
-    if image_queue.full():
-        try:
-            image_queue.get_nowait()
-        except queue.Empty:
-            pass
-    image_queue.put(array)
+    # print("[DEBUG] Image received from CARLA camera") # Silent by default to avoid log spam, but let's enable for test
+    print("[DEBUG] Image received from CARLA camera")
+    try:
+        if not image or not image.raw_data:
+            return
+            
+        array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
+        array = np.reshape(array, (image.height, image.width, 4))
+        array = array[:, :, :3] # Keep BGR channels (CARLA outputs BGRA, OpenCV uses BGR)
+        
+        # Store in queue, dropping oldest if full to maintain real-time
+        if image_queue.full():
+            try:
+                image_queue.get_nowait()
+            except queue.Empty:
+                pass
+        image_queue.put(array)
+    except Exception as e:
+        print(f"[ERR] Camera callback error: {e}")
 
 def setup_carla_task():
     """Connects to CARLA gracefully in a separate thread"""
@@ -188,6 +234,9 @@ def setup_carla_task():
         # Get Spectator transform to match view
         spectator = world.get_spectator()
         transform = spectator.get_transform()
+        # Offset slightly to ensure we aren't inside the spectator's head or floor
+        transform.location.z += 2.0
+        
         camera = world.spawn_actor(camera_bp, transform)
         
         # Start listening to sensor
@@ -214,86 +263,66 @@ def setup_carla_task():
         connection_status = f"Failed to connect (Check CARLA is running)"
         global_world = None
         global_camera = None
-        print(f"Failed to connect to CARLA at {host}:{port}. Error: {e}")
+        print(f"Failed to connect to CARLA at {host}:{port}. Error: {e}", flush=True)
+
+def disconnect_carla():
+    global global_world, global_camera, connection_status
+    if global_camera:
+        try:
+            global_camera.stop()
+            global_camera.destroy()
+        except:
+            pass
+    global_camera = None
+    global_world = None
+    connection_status = "Disconnected"
+    print("[HMI] Disconnected from CARLA")
 
 def bg_connect_carla():
     thread = threading.Thread(target=setup_carla_task, daemon=True)
     thread.start()
 
-# --- 4. TRAFFIC LIGHT CONTROL ---
+# --- 4. TRAFFIC LIGHT CONTROL HELPERS ---
 def get_traffic_lights(world):
-    """
-    HOW TO FIND CORRECT TRAFFIC LIGHT IDs:
-    1. Spawn your camera and observe the intersection.
-    2. Run a loop over world.get_actors().filter('*traffic_light*')
-    3. Calculate the distance from each traffic light to your intersection center (or camera location).
-    4. Group the closest 4-6 traffic lights and manually identify which ID controls which lane.
-    5. Map these IDs to specific directions (e.g., North, South, East, West).
-    """
     return world.get_actors().filter('*traffic_light*')
-
-def control_traffic_lights_logic(world, counts):
-    """Timed logic: Switch to highest density lane every 30 seconds"""
-    global current_green_lane, last_switch_time
-    
-    if not counts:
-        return
-        
-    current_time = time.time()
-    
-    # Check if it's time to re-evaluate (30 second intervals)
-    if current_time - last_switch_time >= 30.0:
-        # Find the lane with the highest density
-        # Ties are handled by max() returning the first key found
-        max_lane = max(counts, key=counts.get)
-        
-        # Update the green lane and reset timer
-        if max_lane != current_green_lane:
-            print(f"SWITCHING GREEN: {max_lane} chosen (Density: {counts[max_lane]})")
-        
-        current_green_lane = max_lane
-        last_switch_time = current_time
-
-    # Apply the states to CARLA actors
-    if not any(TL_IDS.values()):
-        return 
-        
-    tls_actors = get_traffic_lights(world)
-    for tl in tls_actors:
-        matched_lane = None
-        for lane, t_id in TL_IDS.items():
-            if t_id and tl.id == t_id:
-                matched_lane = lane
-                break
-                
-        if matched_lane:
-            if matched_lane == current_green_lane:
-                tl.set_state(carla.TrafficLightState.Green)
-            else:
-                tl.set_state(carla.TrafficLightState.Red)
 
 # --- 3. YOLOv8 CV ENGINE & PROCESSING LOOP ---
 def vision_processing_loop():
     """Separate thread to process images async from CARLA ticks"""
-    global latest_frame, lane_counts, global_world
+    global latest_frame, lane_counts, global_world, last_process_time
+    print("[INIT] Vision Processing Thread Started", flush=True)
     
     while True:
-        if not image_queue.empty():
-            frame = image_queue.get().copy()
-            
-            # Run detection logic from external module
-            frame, lane_counts = process_frame(frame, model, ROIS)
-            
-            # Execute Traffic Light Control Logic
-            if global_world is not None:
-                control_traffic_lights_logic(global_world, lane_counts)
-            
-            # Encode for Flask Video Stream
-            ret, buffer = cv2.imencode('.jpg', frame)
-            if ret:
-                latest_frame = buffer.tobytes()
-        else:
-            time.sleep(0.01)
+        try:
+            if not image_queue.empty():
+                img_data = image_queue.get()
+                if img_data is None: continue
+                
+                frame = img_data.copy()
+                
+                # Execute Consolidated Detection & Control Logic
+                print("[TRACE] Starting process_frame", flush=True)
+                frame, lane_counts = process_frame(frame, model, ROIS.copy())
+                last_process_time = time.time()
+                
+                # Execute Logic centered in detection.py
+                if global_world is not None:
+                    print("[TRACE] Running traffic logic", flush=True)
+                    control_traffic_lights_logic(global_world, lane_counts, TL_IDS)
+                
+                # Encode for Flask Video Stream
+                print("[TRACE] Encoding frame", flush=True)
+                ret, buffer = cv2.imencode('.jpg', frame)
+                if ret:
+                    latest_frame = buffer.tobytes()
+                    print("[TRACE] Frame encoded successfully", flush=True)
+                else:
+                    print("[ERR] Failed to encode frame", flush=True)
+            else:
+                time.sleep(0.01)
+        except Exception as e:
+            print(f"[ERR] Vision Loop Error: {e}", flush=True)
+            time.sleep(0.5)
 
 # --- Flask Web Output ---
 @app.route('/')
@@ -308,13 +337,51 @@ def traffic_control():
 
 @app.route('/api/lane_counts')
 def api_lane_counts():
-    global lane_counts, current_green_lane, last_switch_time, connection_status
-    remaining = max(0, int(30.0 - (time.time() - last_switch_time)))
+    global lane_counts, connection_status, global_world, last_process_time
+    auto_data = get_automation_data()
+    remaining = max(0, int(30.0 - (time.time() - auto_data["last_switch_time"])))
+    
+    # Current detected state
+    is_detecting = "INACTIVE"
+    if model is not None:
+        if last_process_time == 0:
+            is_detecting = "READY"
+        elif time.time() - last_process_time < 3.0:
+            is_detecting = "ACTIVE"
+        else:
+            is_detecting = "STALE"
+            
+    # Real-time traffic light states from world
+    tl_states = {}
+    if global_world:
+        for lane, tid in TL_IDS.items():
+            if tid and str(tid).strip():
+                try:
+                    tl_actor = global_world.get_actor(int(tid))
+                    if tl_actor is not None:
+                        st = tl_actor.get_state()
+                        if st == carla.TrafficLightState.Red: tl_states[lane] = "red"
+                        elif st == carla.TrafficLightState.Yellow: tl_states[lane] = "yellow"
+                        elif st == carla.TrafficLightState.Green: tl_states[lane] = "green"
+                        else: tl_states[lane] = "red"
+                    else:
+                        tl_states[lane] = "red"
+                except:
+                    tl_states[lane] = "red"
+            else:
+                tl_states[lane] = "red"
+    else:
+        # Fallback if no connection
+        tl_states = {l: "red" for l in ["North", "South", "East", "West"]}
+        
     return json.dumps({
         "counts": lane_counts,
-        "green_lane": current_green_lane,
+        "green_lane": auto_data["current_green_lane"],
+        "tl_states": tl_states,
         "timer": remaining,
-        "connection": connection_status
+        "connection": connection_status,
+        "detect_status": is_detecting,
+        "feed_status": "ONLINE" if global_camera is not None else "NO SIGNAL"
     })
 
 @app.route('/api/live_feed')
@@ -338,16 +405,55 @@ def api_get_config():
 
 @app.route('/tl_panel', methods=['GET', 'POST'])
 def tl_panel_route():
-    global TL_IDS
+    global TL_IDS, global_world
     if request.method == 'POST':
         data = request.json if request.is_json else request.form
-        TL_IDS['North'] = int(data.get('tl_north')) if data.get('tl_north') else None
-        TL_IDS['South'] = int(data.get('tl_south')) if data.get('tl_south') else None
-        TL_IDS['East'] = int(data.get('tl_east')) if data.get('tl_east') else None
-        TL_IDS['West'] = int(data.get('tl_west')) if data.get('tl_west') else None
+        
+        new_ids = {
+            'North': data.get('tl_north'),
+            'South': data.get('tl_south'),
+            'East': data.get('tl_east'),
+            'West': data.get('tl_west')
+        }
+        
+        invalid_ids = []
+        validated_ids = {}
+        
+        for lane, tid in new_ids.items():
+            if tid and str(tid).strip():
+                try:
+                    actor_id = int(tid)
+                    # Check actor existence in CARLA
+                    if global_world:
+                        carla_actor = global_world.get_actor(actor_id)
+                        if carla_actor is None:
+                            invalid_ids.append(f"{lane}:{tid}")
+                        else:
+                            validated_ids[lane] = actor_id
+                    else:
+                        # If CARLA not connected, can't validate, but user asked to check if exists
+                        # So we might want to warn or prevent save.
+                        # For now, if not connected, we warn.
+                        invalid_ids.append(f"CARLA_OFFLINE({lane})")
+                except ValueError:
+                    invalid_ids.append(f"INVALID_NUM({lane}:{tid})")
+            else:
+                validated_ids[lane] = None
+
+        if invalid_ids:
+            msg = f"Validation Failed: {', '.join(invalid_ids)}. IDs must exist in active CARLA session."
+            if request.is_json:
+                return jsonify({"status": "error", "message": msg})
+            return render_template('tl_panel.html', tl_ids=TL_IDS, error=msg)
+
+        # Update and Save only if everything is valid
+        for lane, val in validated_ids.items():
+            TL_IDS[lane] = val
+            
         save_tls(TL_IDS)
+        
         if request.is_json:
-            return jsonify({"status": "success", "message": "Traffic Light IDs saved"})
+            return jsonify({"status": "success", "message": "Traffic Light IDs validated and saved"})
         return redirect(url_for('tl_panel_route'))
     
     # Return JSON if requested, else template
@@ -365,11 +471,44 @@ def roi_panel_route():
         if lane and points and len(points) == 4:
             ROIS[lane] = np.array(points, np.int32)
             save_rois()
-            return jsonify({"status": "success", "message": f"ROI saved for {lane}"})
+            return jsonify({"status": "success", "message": f"ROI saved and activated for {lane}"})
         return jsonify({"status": "error", "message": "Invalid point data"})
         
     serializable_rois = {k: v.tolist() for k, v in ROIS.items()}
     return jsonify({"current_rois": serializable_rois})
+
+@app.route('/api/tl_test', methods=['POST'])
+def tl_test_mode():
+    """Manually set a traffic light state for testing"""
+    global global_world
+    if not global_world:
+        return jsonify({"status": "error", "message": "CARLA not connected"})
+        
+    data = request.json
+    actor_id = data.get('actor_id')
+    state_str = data.get('state') # "red", "yellow", "green"
+    
+    if not actor_id:
+        return jsonify({"status": "error", "message": "No Actor ID provided"})
+        
+    try:
+        tl_actor = global_world.get_actor(int(actor_id))
+        if not tl_actor:
+            return jsonify({"status": "error", "message": f"Actor {actor_id} not found"})
+            
+        mapping = {
+            "red": carla.TrafficLightState.Red,
+            "yellow": carla.TrafficLightState.Yellow,
+            "green": carla.TrafficLightState.Green
+        }
+        
+        target_state = mapping.get(state_str.lower())
+        if target_state is not None:
+            tl_actor.set_state(target_state)
+            return jsonify({"status": "success", "message": f"Actor {actor_id} set to {state_str.upper()}"})
+        return jsonify({"status": "error", "message": "Invalid state"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)})
 
 @app.route('/api/roi_sets', methods=['GET', 'POST'])
 def roi_sets_api():
@@ -381,10 +520,18 @@ def roi_sets_api():
         name = data.get('name')
         config_json = data.get('config') # Expecting full ROIS dict as json
         if name and config_json:
+            # Update global ROIS in memory IMMEDIATELY so they show up on stream
+            new_rois = {}
+            for lane, points in config_json.items():
+                new_rois[lane] = np.array(points, np.int32)
+            global ROIS
+            ROIS = new_rois
+            save_rois() # Save these as the 'current' active ROIs in the main rois table
+            
             c.execute("INSERT OR REPLACE INTO roi_sets (name, config) VALUES (?, ?)", (name, json.dumps(config_json)))
             conn.commit()
             conn.close()
-            return jsonify({"status": "success", "message": f"ROI Set '{name}' saved"})
+            return jsonify({"status": "success", "message": f"ROI Set '{name}' saved and activated"})
         conn.close()
         return jsonify({"status": "error", "message": "Missing name or config"})
         
@@ -421,11 +568,16 @@ def control_panel():
         
         # Simple Save
         if action in ['save_only', 'toggle_connect']:
+            old_path = config.get('yolo_model', '')
             config['carla_host'] = data.get('carla_host', config.get('carla_host', ''))
             config['carla_port'] = int(data.get('carla_port', 2000)) if data.get('carla_port') else config.get('carla_port')
             config['carla_timeout'] = float(data.get('carla_timeout', 10.0)) if data.get('carla_timeout') else config.get('carla_timeout')
             config['yolo_model'] = data.get('yolo_model', config.get('yolo_model', ''))
             save_config(config)
+            
+            # Reload model if path changed
+            if config['yolo_model'] != old_path:
+                load_yolo_model(config['yolo_model'])
             
         if action == 'toggle_connect':
             if global_camera:
@@ -444,45 +596,41 @@ def control_panel():
     return render_template('panel.html', config=config, status=connection_status)
 
 def generate_video_stream():
-    global latest_frame
-    
-    # Generate a dummy placeholder frame for when no connection exists
-    blank_image = np.zeros((600, 800, 3), np.uint8)
-    cv2.putText(blank_image, "WAITING FOR SIGNAL...", (230, 300), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-    _, blank_jpeg = cv2.imencode('.jpg', blank_image)
-    blank_frame = blank_jpeg.tobytes()
-    
-    while True:
-        if latest_frame is not None:
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + latest_frame + b'\r\n')
-        else:
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + blank_frame + b'\r\n')
-        time.sleep(0.05)
+    global latest_frame, BLANK_FRAME_BYTES
+    print("[DEBUG] Video Stream Generator Started for a client")
+    try:
+        while True:
+            # Check current data
+            frame_to_yield = latest_frame if latest_frame is not None else BLANK_FRAME_BYTES
+            
+            if frame_to_yield:
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + frame_to_yield + b'\r\n')
+            time.sleep(0.05)
+    except Exception as e:
+        print(f"[DEBUG] Video client disconnected: {e}")
 
 @app.route('/video_feed')
 def video_feed():
-    response = Response(generate_video_stream(), mimetype='multipart/x-mixed-replace; boundary=frame')
-    response.headers['Access-Control-Allow-Origin'] = '*'
-    return response
+    """MJPEG stream for live dashboard and ROI setup windows"""
+    return Response(generate_video_stream(), 
+                   mimetype='multipart/x-mixed-replace; boundary=frame',
+                   headers={'Access-Control-Allow-Origin': '*'})
 
 if __name__ == '__main__':
     try:
-        # Prevent threads from starting twice when using Flask reloader
-        if os.environ.get('WERKZEUG_RUN_MAIN') == 'true' or not app.debug:
-            # Note: CARLA connect removed from boot as requested by user.
-            # Must connect manually via Web UI.
-            
-            # 2. Start YOLO CV processing in background thread
-            processor_thread = threading.Thread(target=vision_processing_loop, daemon=True)
-            processor_thread.start()
+        # Avoid reloader double-spawn threading issues on Windows
+        # Use debug=True for errors, but use_reloader=False for stable background threads
+        
+        # 2. Start YOLO CV processing in background thread
+        processor_thread = threading.Thread(target=vision_processing_loop, daemon=True)
+        processor_thread.start()
         
         # 3. Start Flask Web Server
         flask_host = config.get('flask_host', '0.0.0.0')
         flask_port = config.get('flask_port', 5050)
-        print(f"Starting Smart Traffic Management App on {flask_host}:{flask_port}...")
-        app.run(host=flask_host, port=flask_port, debug=True, use_reloader=True)
+        print(f"Starting Smart Traffic Management App on {flask_host}:{flask_port} (Reloader: OFF)...")
+        app.run(host=flask_host, port=flask_port, debug=True, use_reloader=False)
         
     except KeyboardInterrupt:
         print("Shutting down... destroying camera.")

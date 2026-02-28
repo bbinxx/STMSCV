@@ -774,6 +774,9 @@
             border: 1px solid var(--border);
             margin-bottom: 10px;
             overflow: hidden;
+            width: 100%;
+            height: auto;
+            min-height: 200px;
         }
 
         #roi-img {
@@ -789,6 +792,63 @@
             width: 100%;
             height: 100%;
             cursor: crosshair;
+            z-index: 5;
+            display: block;
+        }
+
+        /* TL MAPPING STYLES */
+        .tl-mapping-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .tl-map-row {
+            display: flex;
+            align-items: flex-end;
+            gap: 10px;
+            padding: 8px;
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 4px;
+        }
+
+        .tl-test-btns {
+            display: flex;
+            gap: 4px;
+        }
+
+        .tbtn {
+            width: 28px;
+            height: 28px;
+            border-radius: 4px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: #222;
+            color: #fff;
+            cursor: pointer;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 11px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: 0.2s;
+        }
+
+        .tbtn-r:hover {
+            background: var(--red);
+            color: white;
+            border-color: var(--red);
+        }
+
+        .tbtn-y:hover {
+            background: var(--yellow);
+            color: black;
+            border-color: var(--yellow);
+        }
+
+        .tbtn-g:hover {
+            background: var(--green);
+            color: black;
+            border-color: var(--green);
         }
 
         /* ===== TRAFFIC LIGHT VISUAL ===== */
@@ -1150,6 +1210,9 @@
                     <button class="btn btn-yellow" id="btn-save-only">SAVE CONFIG</button>
                     <button class="btn btn-green" id="btn-toggle-connect">CONNECT</button>
                 </div>
+                <div class="form-hint" style="margin-top:10px; text-align:center;">
+                    SERVER RUNNING ON PORT 5050
+                </div>
             </div>
             <div class="fwin-resize"></div>
         </div>
@@ -1260,26 +1323,58 @@
                         <span class="tl-id" id="tl-id-West">--</span>
                     </div>
                 </div>
-                <div class="section-head">ACTOR ID MAPPING</div>
-                <div class="form-grid-2">
-                    <div class="form-group">
-                        <label class="form-label">NORTH ID</label>
-                        <input type="number" class="form-input" id="tl-north" placeholder="Actor ID">
+                <div class="section-head">ACTOR ID MAPPING & TEST</div>
+                <div class="tl-mapping-list">
+                    <!-- North -->
+                    <div class="tl-map-row">
+                        <div style="flex:1;">
+                            <label class="form-label">NORTH ID</label>
+                            <input type="number" class="form-input" id="tl-north" placeholder="ID">
+                        </div>
+                        <div class="tl-test-btns">
+                            <button class="tbtn tbtn-r" onclick="testTL('North','red')">R</button>
+                            <button class="tbtn tbtn-y" onclick="testTL('North','yellow')">Y</button>
+                            <button class="tbtn tbtn-g" onclick="testTL('North','green')">G</button>
+                        </div>
                     </div>
-                    <div class="form-group">
-                        <label class="form-label">SOUTH ID</label>
-                        <input type="number" class="form-input" id="tl-south" placeholder="Actor ID">
+                    <!-- South -->
+                    <div class="tl-map-row">
+                        <div style="flex:1;">
+                            <label class="form-label">SOUTH ID</label>
+                            <input type="number" class="form-input" id="tl-south" placeholder="ID">
+                        </div>
+                        <div class="tl-test-btns">
+                            <button class="tbtn tbtn-r" onclick="testTL('South','red')">R</button>
+                            <button class="tbtn tbtn-y" onclick="testTL('South','yellow')">Y</button>
+                            <button class="tbtn tbtn-g" onclick="testTL('South','green')">G</button>
+                        </div>
                     </div>
-                    <div class="form-group">
-                        <label class="form-label">EAST ID</label>
-                        <input type="number" class="form-input" id="tl-east" placeholder="Actor ID">
+                    <!-- East -->
+                    <div class="tl-map-row">
+                        <div style="flex:1;">
+                            <label class="form-label">EAST ID</label>
+                            <input type="number" class="form-input" id="tl-east" placeholder="ID">
+                        </div>
+                        <div class="tl-test-btns">
+                            <button class="tbtn tbtn-r" onclick="testTL('East','red')">R</button>
+                            <button class="tbtn tbtn-y" onclick="testTL('East','yellow')">Y</button>
+                            <button class="tbtn tbtn-g" onclick="testTL('East','green')">G</button>
+                        </div>
                     </div>
-                    <div class="form-group">
-                        <label class="form-label">WEST ID</label>
-                        <input type="number" class="form-input" id="tl-west" placeholder="Actor ID">
+                    <!-- West -->
+                    <div class="tl-map-row">
+                        <div style="flex:1;">
+                            <label class="form-label">WEST ID</label>
+                            <input type="number" class="form-input" id="tl-west" placeholder="ID">
+                        </div>
+                        <div class="tl-test-btns">
+                            <button class="tbtn tbtn-r" onclick="testTL('West','red')">R</button>
+                            <button class="tbtn tbtn-y" onclick="testTL('West','yellow')">Y</button>
+                            <button class="tbtn tbtn-g" onclick="testTL('West','green')">G</button>
+                        </div>
                     </div>
                 </div>
-                <button class="btn" id="btn-update-tl" style="margin-top:4px;">UPDATE API BINDINGS</button>
+                <button class="btn btn-cyan btn-sm" id="btn-update-tl" style="margin-top:10px;">UPDATE BINDINGS</button>
             </div>
             <div class="fwin-resize"></div>
         </div>
