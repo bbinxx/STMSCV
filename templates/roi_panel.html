@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ROI Setup</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        dark: '#0b0f19',
+                        panel: '#11151e',
+                        card: '#161b28',
+                        accent: '#6366f1',
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+
+<body class="bg-dark text-slate-200 font-sans min-h-screen p-6">
+    <div class="max-w-6xl mx-auto space-y-6">
+        <div class="flex items-center justify-between bg-panel p-6 rounded-xl border border-gray-800 shadow-xl">
+            <div>
+                <h2 class="text-xl font-bold flex items-center gap-3">
+                    <i class="fa-solid fa-draw-polygon text-accent"></i> Region of Interest (ROI) Setup
+                </h2>
+                <p class="text-sm text-gray-400 mt-1">Select a lane and click 4 points on the video to define detection
+                    zones.</p>
+            </div>
+            <a href="/"
+                class="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 border border-gray-700">
+                <i class="fa-solid fa-house"></i> Home
+            </a>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            <!-- Controls Sidebar -->
+            <div class="lg:col-span-1 space-y-6">
+                <div class="bg-panel p-6 rounded-xl border border-gray-800 shadow-xl space-y-4">
+                    <div class="flex flex-col gap-2">
+                        <label class="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Target Lane</label>
+                        <select id="laneMode"
+                            class="bg-gray-900 border border-gray-700 rounded-md px-4 py-2 text-slate-200 focus:outline-none focus:ring-2 focus:ring-accent/50">
+                            <option value="North">North Lane</option>
+                            <option value="South">South Lane</option>
+                            <option value="East">East Lane</option>
+                            <option value="West">West Lane</option>
+                        </select>
+                    </div>
+
+                    <div class="space-y-2">
+                        <button type="button" id="clearBtn"
+                            class="w-full bg-red-900/30 hover:bg-red-900/50 text-red-400 border border-red-900/50 py-3 rounded-md text-sm font-bold uppercase tracking-widest transition-all">
+                            <i class="fa-solid fa-trash-can mr-2"></i> Clear Points
+                        </button>
+                        <button type="button" id="saveBtn"
+                            class="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-md text-sm font-bold uppercase tracking-widest shadow-lg shadow-emerald-500/20 transition-all">
+                            <i class="fa-solid fa-floppy-disk mr-2"></i> Save ROI
+                        </button>
+                    </div>
+
+                    <div id="statusMsg"
+                        class="mt-4 p-3 rounded-md bg-gray-900 border border-gray-800 text-xs text-amber-500 font-medium text-center min-h-[40px] flex items-center justify-center italic">
+                        Select a lane to start
+                    </div>
+                </div>
+            </div>
+
+            <!-- Drawing Area -->
+            <div class="lg:col-span-3">
+                <div class="relative bg-black rounded-xl border-4 border-gray-800 shadow-2xl overflow-hidden group">
+                    {% set feed = config.get('live_feed_url', '/video_feed') %}
+                    {% if '://' not in feed and not feed.startswith('/') %}
+                    {% set feed = 'http://' + feed + '/api/live_feed' %}
+                    {% endif %}
+                    <img id="video-feed" src="{{ feed }}" class="w-full h-auto block"
+                        onerror="this.src='/video_feed'" />
+                    <canvas id="overlay-canvas" class="absolute top-0 left-0 w-full h-full cursor-crosshair"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('overlay-canvas');
+        const ctx = canvas.getContext('2d');
+        const videoImg = document.getElementById('video-feed');
+        let currentPoints = [];
+
+        // Sync canvas resolution with actual image metrics
+        function resizeCanvas() {
+            canvas.width = videoImg.naturalWidth || 800;
+            canvas.height = videoImg.naturalHeight || 600;
+            drawScene();
+        }
+
+        videoImg.onload = resizeCanvas;
+        window.onresize = resizeCanvas;
+
+        // Existing ROIs to display
+        let existingRois = JSON.parse('{{ current_rois|tojson|safe }}');
+
+        function drawScene() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw all existing ROIs
+            for (const [lane, points] of Object.entries(existingRois)) {
+                if (points && points.length === 4) {
+                    ctx.beginPath();
+                    ctx.moveTo(points[0][0], points[0][1]);
+                    for (let i = 1; i < points.length; i++) {
+                        ctx.lineTo(points[i][0], points[i][1]);
+                    }
+                    ctx.closePath();
+                    ctx.lineWidth = 2;
+                    ctx.strokeStyle = 'rgba(99, 102, 241, 0.4)'; // accent color faded
+                    ctx.stroke();
+                    ctx.fillStyle = 'rgba(99, 102, 241, 0.1)';
+                    ctx.fill();
+
+                    ctx.fillStyle = "#818cf8";
+                    ctx.font = "bold 14px Inter";
+                    ctx.fillText(lane, points[0][0], points[0][1] - 8);
+                }
+            }
+
+            // Draw current drawing
+            if (currentPoints.length > 0) {
+                ctx.beginPath();
+                ctx.moveTo(currentPoints[0].x, currentPoints[0].y);
+                for (let i = 1; i < currentPoints.length; i++) {
+                    ctx.lineTo(currentPoints[i].x, currentPoints[i].y);
+                }
+                if (currentPoints.length === 4) ctx.closePath();
+
+                ctx.lineWidth = 3;
+                ctx.strokeStyle = '#fbbf24'; // amber
+                ctx.stroke();
+
+                currentPoints.forEach((pt, idx) => {
+                    ctx.beginPath();
+                    ctx.arc(pt.x, pt.y, 6, 0, 2 * Math.PI);
+                    ctx.fillStyle = '#ef4444'; // red
+                    ctx.fill();
+                    ctx.strokeStyle = 'white';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+
+                    ctx.fillStyle = "white";
+                    ctx.fillText(idx + 1, pt.x + 10, pt.y + 10);
+                });
+            }
+        }
+
+        canvas.addEventListener('mousedown', function (e) {
+            if (currentPoints.length >= 4) return;
+
+            const rect = canvas.getBoundingClientRect();
+            const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+            const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+
+            currentPoints.push({ x: Math.round(x), y: Math.round(y) });
+            drawScene();
+
+            if (currentPoints.length === 4) {
+                document.getElementById('statusMsg').innerText = "ROI shape completed. Click 'Save ROI'.";
+            } else {
+                document.getElementById('statusMsg').innerText = (4 - currentPoints.length) + " points remaining...";
+            }
+        });
+
+        document.getElementById('clearBtn').addEventListener('click', function () {
+            currentPoints = [];
+            document.getElementById('statusMsg').innerText = "Points cleared.";
+            drawScene();
+        });
+
+        document.getElementById('saveBtn').addEventListener('click', function () {
+            if (currentPoints.length !== 4) {
+                document.getElementById('statusMsg').innerText = "Error: 4 points required.";
+                return;
+            }
+
+            const lane = document.getElementById('laneMode').value;
+            const pointsArray = currentPoints.map(p => [p.x, p.y]);
+
+            $.ajax({
+                type: "POST",
+                url: "/roi_panel",
+                contentType: "application/json",
+                data: JSON.stringify({ lane: lane, points: pointsArray }),
+                success: function (response) {
+                    document.getElementById('statusMsg').innerText = "ROI for " + lane + " lane updated!";
+                    existingRois[lane] = pointsArray;
+                    currentPoints = [];
+                    drawScene();
+                },
+                error: function () {
+                    document.getElementById('statusMsg').innerText = "Server Error: Could not save ROI.";
+                }
+            });
+        });
+
+        // Initialize display
+        setTimeout(resizeCanvas, 500);
+    </script>
+</body>
+
+</html>

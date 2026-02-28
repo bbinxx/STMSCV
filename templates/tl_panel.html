@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Traffic Lights Assignment</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        dark: '#0b0f19',
+                        panel: '#11151e',
+                        card: '#161b28',
+                        accent: '#6366f1',
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+
+<body class="bg-dark text-slate-200 font-sans min-h-screen flex items-center justify-center p-6">
+    <div class="bg-panel w-full max-w-md border border-gray-800 rounded-xl shadow-2xl overflow-hidden">
+        <div class="bg-card p-6 border-b border-gray-800 text-center">
+            <h2 class="text-xl font-bold flex items-center justify-center gap-3">
+                <i class="fa-solid fa-traffic-light text-accent"></i> Traffic Light Mapping
+            </h2>
+            <p class="text-[10px] text-gray-500 uppercase tracking-widest mt-2">Assign CARLA Actor IDs to Control Lanes
+            </p>
+        </div>
+
+        <form method="POST" class="p-8 space-y-5">
+            <div class="space-y-4">
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="flex flex-col gap-1.5">
+                        <label
+                            class="text-[11px] font-bold text-gray-500 uppercase tracking-widest flex items-center gap-2">
+                            North ID
+                        </label>
+                        <input type="number" name="tl_north" value="{{ tl_ids.get('North', '') }}" placeholder="ID"
+                            class="bg-gray-900 border border-gray-700 rounded-md px-4 py-2.5 text-slate-200 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-all text-center">
+                    </div>
+                    <div class="flex flex-col gap-1.5">
+                        <label
+                            class="text-[11px] font-bold text-gray-500 uppercase tracking-widest flex items-center gap-2">
+                            South ID
+                        </label>
+                        <input type="number" name="tl_south" value="{{ tl_ids.get('South', '') }}" placeholder="ID"
+                            class="bg-gray-900 border border-gray-700 rounded-md px-4 py-2.5 text-slate-200 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-all text-center">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="flex flex-col gap-1.5">
+                        <label
+                            class="text-[11px] font-bold text-gray-500 uppercase tracking-widest flex items-center gap-2">
+                            East ID
+                        </label>
+                        <input type="number" name="tl_east" value="{{ tl_ids.get('East', '') }}" placeholder="ID"
+                            class="bg-gray-900 border border-gray-700 rounded-md px-4 py-2.5 text-slate-200 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-all text-center">
+                    </div>
+                    <div class="flex flex-col gap-1.5">
+                        <label
+                            class="text-[11px] font-bold text-gray-500 uppercase tracking-widest flex items-center gap-2">
+                            West ID
+                        </label>
+                        <input type="number" name="tl_west" value="{{ tl_ids.get('West', '') }}" placeholder="ID"
+                            class="bg-gray-900 border border-gray-700 rounded-md px-4 py-2.5 text-slate-200 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-all text-center">
+                    </div>
+                </div>
+            </div>
+
+            <button type="submit"
+                class="w-full bg-accent hover:bg-indigo-600 text-white font-bold py-3 px-6 rounded-lg shadow-lg shadow-accent/20 transition-all active:scale-95 uppercase tracking-widest text-sm flex items-center justify-center gap-2">
+                <i class="fa-solid fa-check"></i> Update API Bindings
+            </button>
+        </form>
+
+        <div class="bg-gray-900/50 px-8 py-4 text-center border-t border-gray-800">
+            <a href="/"
+                class="text-gray-500 hover:text-accent transition-colors text-sm flex items-center justify-center gap-2">
+                <i class="fa-solid fa-arrow-left"></i> Return to Portal
+            </a>
+        </div>
+    </div>
+</body>
+
+</html>

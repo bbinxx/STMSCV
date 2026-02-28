@@ -1,0 +1,9 @@
+{
+    "carla_host": "192.168.137.39",
+    "carla_port": 2000,
+    "carla_timeout": 7.2,
+    "yolo_model": "yolov8n.pt",
+    "flask_host": "0.0.0.0",
+    "flask_port": 5050,
+    "live_feed_url": "127.0.0.1:5000"
+}
