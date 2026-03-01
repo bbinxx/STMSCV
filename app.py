@@ -7,6 +7,7 @@ import time
 import json
 import os
 import sqlite3
+import urllib.request
 from ultralytics import YOLO
 from flask import Flask, Response, render_template, request, redirect, url_for, jsonify
 
@@ -29,6 +30,10 @@ def init_db():
                  (lane TEXT PRIMARY KEY, actor_id INTEGER)''')
     c.execute('''CREATE TABLE IF NOT EXISTS roi_sets
                  (name TEXT PRIMARY KEY, config TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS mode2_cameras
+                 (lane TEXT PRIMARY KEY, source TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS mode2_rois
+                 (lane TEXT PRIMARY KEY, points TEXT)''')
     conn.commit()
     conn.close()
 
@@ -126,6 +131,205 @@ global_camera = None
 connection_status = "Disconnected"
 
 # Global automation state now handled by detection module
+
+# --- MODE 2: Per-direction camera sources, ROIs & frames ---
+DIRECTIONS = ['North', 'South', 'East', 'West']
+
+# ── camera config ─────────────────────────────────────────────
+def load_mode2_cameras():
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT lane, source FROM mode2_cameras")
+    rows = c.fetchall()
+    conn.close()
+    data = {d: '' for d in DIRECTIONS}
+    for lane, src in rows:
+        data[lane] = src or ''
+    return data
+
+def save_mode2_cameras(cam_cfg):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    for lane, src in cam_cfg.items():
+        c.execute("INSERT OR REPLACE INTO mode2_cameras (lane, source) VALUES (?, ?)", (lane, src))
+    conn.commit()
+    conn.close()
+
+# ── ROI config ────────────────────────────────────────────────
+def load_mode2_rois():
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT lane, points FROM mode2_rois")
+    rows = c.fetchall()
+    conn.close()
+    data = {}
+    for lane, pts_str in rows:
+        try:
+            data[lane] = np.array(json.loads(pts_str), np.int32)
+        except Exception:
+            pass
+    return data
+
+def save_mode2_rois(rois_dict):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    for lane, pts in rois_dict.items():
+        pts_list = pts.tolist() if isinstance(pts, np.ndarray) else pts
+        c.execute("INSERT OR REPLACE INTO mode2_rois (lane, points) VALUES (?, ?)",
+                  (lane, json.dumps(pts_list)))
+    conn.commit()
+    conn.close()
+
+mode2_cam_config = load_mode2_cameras()   # {lane: source_str}
+mode2_rois       = load_mode2_rois()      # {lane: np.array (4,2)}
+mode2_frames     = {d: None for d in DIRECTIONS}  # {lane: jpeg_bytes (with detection overlay)}
+mode2_raw_frames = {}                     # {lane: raw np frame (for detection)}
+mode2_counts     = {d: 0 for d in DIRECTIONS}  # {lane: int}
+mode2_captures   = {}  # {lane: cv2.VideoCapture or urllib stream}
+mode2_threads    = {}  # {lane: Thread}
+
+def _make_blank_dir_frame(direction):
+    img = np.zeros((360, 640, 3), np.uint8)
+    cv2.putText(img, f'{direction.upper()} -- NO SOURCE', (160, 180),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (40, 80, 120), 2)
+    _, buf = cv2.imencode('.jpg', img)
+    return buf.tobytes()
+
+for _d in DIRECTIONS:
+    mode2_frames[_d] = _make_blank_dir_frame(_d)
+
+def _is_mjpeg_url(src):
+    """Returns True if source looks like an HTTP/HTTPS MJPEG stream."""
+    s = src.lower()
+    return s.startswith('http://') or s.startswith('https://')
+
+def _read_mjpeg_url(direction, src):
+    """
+    Generator: yields decoded BGR frames from an MJPEG-over-HTTP stream.
+    Handles multipart/x-mixed-replace boundaries (e.g. /video_feed?id=27).
+    Falls back to cv2.VideoCapture for generic HTTP streams.
+    """
+    print(f"[MODE2] Connecting MJPEG URL for {direction}: {src}", flush=True)
+    buf = b''
+    try:
+        stream = urllib.request.urlopen(src, timeout=10)
+        while True:
+            # Stop if source changed
+            src_now = mode2_cam_config.get(direction, '').strip()
+            if src_now != src:
+                return
+            chunk = stream.read(4096)
+            if not chunk:
+                return
+            buf += chunk
+            # JPEG start/end markers
+            a = buf.find(b'\xff\xd8')
+            b_ = buf.find(b'\xff\xd9')
+            if a != -1 and b_ != -1 and b_ > a:
+                jpg = buf[a:b_+2]
+                buf = buf[b_+2:]
+                frame = cv2.imdecode(np.frombuffer(jpg, np.uint8), cv2.IMREAD_COLOR)
+                if frame is not None:
+                    yield frame
+    except Exception as e:
+        print(f"[MODE2] MJPEG URL error for {direction}: {e}", flush=True)
+        return
+
+def _apply_detection_overlay(direction, frame):
+    """
+    Runs YOLO detection on `frame` within the direction's ROI (if set).
+    Updates mode2_counts[direction]. Returns annotated frame bytes.
+    """
+    global model, mode2_rois, mode2_counts
+    roi_map = {}
+    if direction in mode2_rois:
+        roi_map[direction] = mode2_rois[direction]
+
+    annotated, counts = process_frame(frame.copy(), model, roi_map)
+    if roi_map:
+        mode2_counts[direction] = counts.get(direction, 0)
+    else:
+        mode2_counts[direction] = 0
+
+    _, buf = cv2.imencode('.jpg', annotated)
+    return buf.tobytes()
+
+def mode2_capture_loop(direction):
+    """Background thread: reads frames from any source for one direction."""
+    global mode2_frames, mode2_captures, mode2_raw_frames
+
+    src = mode2_cam_config.get(direction, '').strip()
+    if not src:
+        mode2_frames[direction] = _make_blank_dir_frame(direction)
+        return
+
+    # ── MJPEG HTTP URL ─────────────────────────────────────────
+    if _is_mjpeg_url(src):
+        for frame in _read_mjpeg_url(direction, src):
+            mode2_raw_frames[direction] = frame
+            mode2_frames[direction] = _apply_detection_overlay(direction, frame)
+            time.sleep(0.033)
+        # Stream ended
+        mode2_frames[direction] = _make_blank_dir_frame(direction)
+        print(f"[MODE2] MJPEG URL stream ended for {direction}", flush=True)
+        return
+
+    # ── Webcam index / video file / RTSP ───────────────────────
+    try:
+        src_val = int(src)
+    except ValueError:
+        src_val = src
+
+    cap = cv2.VideoCapture(src_val)
+    mode2_captures[direction] = cap
+    if not cap.isOpened():
+        mode2_frames[direction] = _make_blank_dir_frame(direction)
+        print(f"[MODE2] Cannot open source for {direction}: {src}", flush=True)
+        return
+
+    print(f"[MODE2] Capture started for {direction}: {src}", flush=True)
+    while True:
+        src_now = mode2_cam_config.get(direction, '').strip()
+        if not src_now:
+            break
+        try:
+            val_now = int(src_now)
+        except ValueError:
+            val_now = src_now
+        if val_now != src_val:
+            break
+
+        ret, frame = cap.read()
+        if not ret:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            time.sleep(0.05)
+            continue
+
+        mode2_raw_frames[direction] = frame
+        mode2_frames[direction] = _apply_detection_overlay(direction, frame)
+        time.sleep(0.033)
+
+    cap.release()
+    mode2_captures.pop(direction, None)
+    mode2_frames[direction] = _make_blank_dir_frame(direction)
+    print(f"[MODE2] Capture stopped for {direction}", flush=True)
+
+def start_mode2_direction(direction):
+    """Start (or restart) the capture thread for a direction."""
+    old_cap = mode2_captures.pop(direction, None)
+    if old_cap:
+        try: old_cap.release()
+        except: pass
+    t = threading.Thread(target=mode2_capture_loop, args=(direction,), daemon=True)
+    mode2_threads[direction] = t
+    t.start()
+
+def generate_mode2_stream(direction):
+    while True:
+        frame = mode2_frames.get(direction)
+        if frame:
+            yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+        time.sleep(0.04)
 
 # --- Dynamic Settings Configurations ---
 def load_rois():
@@ -392,7 +596,8 @@ def api_lane_counts():
         "cycle_duration": current_cycle,
         "connection": connection_status,
         "detect_status": is_detecting,
-        "feed_status": "ONLINE" if global_camera is not None else "NO SIGNAL"
+        "feed_status": "ONLINE" if global_camera is not None else "NO SIGNAL",
+        "mode2_counts": {d: mode2_counts.get(d, 0) for d in DIRECTIONS}
     })
 
 @app.route('/api/live_feed')
@@ -635,6 +840,62 @@ def video_feed():
     return Response(generate_video_stream(), 
                    mimetype='multipart/x-mixed-replace; boundary=frame',
                    headers={'Access-Control-Allow-Origin': '*'})
+
+# --- MODE 2 ROUTES ---
+@app.route('/video_feed/mode2/<direction>')
+def video_feed_mode2(direction):
+    """Per-direction MJPEG stream for Mode 2"""
+    if direction not in DIRECTIONS:
+        return jsonify({'error': 'Invalid direction'}), 404
+    return Response(generate_mode2_stream(direction),
+                    mimetype='multipart/x-mixed-replace; boundary=frame',
+                    headers={'Access-Control-Allow-Origin': '*'})
+
+@app.route('/api/mode2_config', methods=['GET', 'POST'])
+def mode2_config_api():
+    global mode2_cam_config
+    if request.method == 'POST':
+        data = request.json or {}
+        changed = []
+        for lane in DIRECTIONS:
+            key = f'src_{lane.lower()}'
+            if key in data:
+                new_src = str(data[key]).strip()
+                if mode2_cam_config.get(lane) != new_src:
+                    mode2_cam_config[lane] = new_src
+                    changed.append(lane)
+        if changed:
+            save_mode2_cameras(mode2_cam_config)
+            for lane in changed:
+                start_mode2_direction(lane)
+        return jsonify({'status': 'success', 'updated': changed, 'config': mode2_cam_config})
+    return jsonify({'status': 'ok', 'config': mode2_cam_config})
+
+@app.route('/api/mode2_rois', methods=['GET', 'POST'])
+def mode2_rois_api():
+    global mode2_rois
+    if request.method == 'POST':
+        data = request.json or {}
+        lane = data.get('lane')
+        points = data.get('points')  # list of [x,y]
+        if lane not in DIRECTIONS:
+            return jsonify({'status': 'error', 'message': 'Invalid lane'})
+        if points and len(points) >= 3:
+            mode2_rois[lane] = np.array(points, np.int32)
+        elif points == [] or points is None:
+            # Clear ROI for this lane
+            mode2_rois.pop(lane, None)
+        save_mode2_rois(mode2_rois)
+        return jsonify({'status': 'success', 'message': f'Mode2 ROI saved for {lane}'})
+
+    # GET: return all saved rois serialized
+    serializable = {k: v.tolist() for k, v in mode2_rois.items()}
+    return jsonify({'status': 'ok', 'rois': serializable})
+
+# Auto-start Mode 2 captures for any saved sources
+for _dir in DIRECTIONS:
+    if mode2_cam_config.get(_dir, '').strip():
+        start_mode2_direction(_dir)
 
 if __name__ == '__main__':
     try:

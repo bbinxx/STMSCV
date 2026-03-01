@@ -915,3 +915,408 @@ document.getElementById('btn-test-api').addEventListener('click', () => {
 
 // ─── INIT FEED ───────────────────────────────────────────────
 updateLiveFeedSrc();
+
+// ─── MODE SWITCHING ──────────────────────────────────────────
+let currentMode = 1;
+
+function switchMode(mode) {
+    currentMode = mode;
+    const canvas = document.getElementById('canvas');
+    const mode2Panel = document.getElementById('mode2-panel');
+    const tab1 = document.getElementById('mode-tab-1');
+    const tab2 = document.getElementById('mode-tab-2');
+
+    if (mode === 2) {
+        canvas.style.display = 'none';
+        mode2Panel.classList.add('active');
+        tab1.classList.remove('active');
+        tab2.classList.add('active');
+        document.getElementById('sb-mode2').classList.add('active');
+        loadM2ConfigFromBackend();
+    } else {
+        canvas.style.display = '';
+        mode2Panel.classList.remove('active');
+        tab1.classList.add('active');
+        tab2.classList.remove('active');
+        document.getElementById('sb-mode2').classList.remove('active');
+    }
+}
+
+// Sidebar M2 button
+document.getElementById('sb-mode2').addEventListener('click', () => {
+    switchMode(currentMode === 2 ? 1 : 2);
+});
+
+// ─── MODE 2 INNER TABS ───────────────────────────────────────
+function switchM2Tab(tab) {
+    ['config', 'main'].forEach(t => {
+        document.getElementById('m2-tab-' + t).classList.toggle('active', t === tab);
+        document.getElementById('m2-section-' + t).classList.toggle('active', t === tab);
+    });
+}
+
+// ─── MODE 2 SOURCE MANAGEMENT ────────────────────────────────
+const M2_DIRS = ['North', 'South', 'East', 'West'];
+
+function applyM2Source(direction) {
+    const src = document.getElementById('m2-src-' + direction).value.trim();
+    const payload = {};
+    payload['src_' + direction.toLowerCase()] = src;
+
+    fetch('/api/mode2_config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    }).then(r => r.json()).then(data => {
+        if (data.status === 'success') {
+            toast(direction + ' source applied', 'green');
+            // Refresh stream src to trigger reload
+            refreshM2Stream(direction);
+            updateM2CardState(direction, !!src);
+        } else {
+            toast('Failed to apply ' + direction, 'red');
+        }
+    }).catch(() => toast('Network Error', 'red'));
+}
+
+function refreshM2Stream(direction) {
+    const ts = Date.now();
+    const prevImg = document.getElementById('m2-prev-' + direction);
+    const mainImg = document.getElementById('m2-main-' + direction);
+    const newSrc = `/video_feed/mode2/${direction}?t=${ts}`;
+    if (prevImg) prevImg.src = newSrc;
+    if (mainImg) mainImg.src = newSrc;
+
+    // Badge update
+    const badge = document.getElementById('m2-prev-badge-' + direction);
+    const src = document.getElementById('m2-src-' + direction)?.value?.trim();
+    if (badge) {
+        badge.textContent = src ? 'LIVE' : 'NO SOURCE';
+        badge.className = 'm2-prev-badge' + (src ? ' live' : '');
+    }
+}
+
+function updateM2CardState(direction, isConfigured) {
+    const card = document.getElementById('m2-card-' + direction);
+    if (card) card.classList.toggle('configured', isConfigured);
+}
+
+document.getElementById('m2-save-all').addEventListener('click', () => {
+    const payload = {};
+    let anyFilled = false;
+    M2_DIRS.forEach(d => {
+        const val = document.getElementById('m2-src-' + d)?.value?.trim() || '';
+        payload['src_' + d.toLowerCase()] = val;
+        if (val) anyFilled = true;
+    });
+
+    fetch('/api/mode2_config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    }).then(r => r.json()).then(data => {
+        toast('All sources saved', data.status === 'success' ? 'green' : 'red');
+        if (data.status === 'success') {
+            M2_DIRS.forEach(d => {
+                const src = payload['src_' + d.toLowerCase()];
+                refreshM2Stream(d);
+                updateM2CardState(d, !!src);
+            });
+        }
+    }).catch(() => toast('Network Error', 'red'));
+});
+
+function loadM2ConfigFromBackend() {
+    fetch('/api/mode2_config')
+        .then(r => r.json())
+        .then(data => {
+            if (!data.config) return;
+            M2_DIRS.forEach(d => {
+                const val = data.config[d] || '';
+                const inp = document.getElementById('m2-src-' + d);
+                if (inp) inp.value = val;
+                updateM2CardState(d, !!val);
+                const badge = document.getElementById('m2-prev-badge-' + d);
+                if (badge) {
+                    badge.textContent = val ? 'LIVE' : 'NO SOURCE';
+                    badge.className = 'm2-prev-badge' + (val ? ' live' : '');
+                }
+            });
+        })
+        .catch(() => { });
+}
+
+// ─── MODE 2 SIGNAL SYNC (reuses existing poll data) ──────────
+function updateMode2Visuals(data) {
+    if (currentMode !== 2) return;
+    const tlStates = data.tl_states || {};
+    const m2counts = data.mode2_counts || {};
+    const greenLane = data.green_lane;
+
+    M2_DIRS.forEach(lane => {
+        const state = tlStates[lane] || 'red';
+        const count = m2counts[lane] !== undefined ? m2counts[lane] : (data.counts || {})[lane] || 0;
+
+        // Traffic lights in mode 2
+        ['red', 'yellow', 'green'].forEach(s => {
+            const el = document.getElementById('m2-tl-' + s[0] + '-' + lane);
+            if (el) el.className = 'm2-tl-light' + (s === state ? ' lit-' + s : '');
+        });
+
+        // Vehicle count
+        const cntEl = document.getElementById('m2-cnt-' + lane);
+        if (cntEl) cntEl.textContent = count;
+
+        // Tile green-active highlight
+        const tile = document.getElementById('m2-tile-' + lane);
+        if (tile) tile.classList.toggle('green-active', lane === greenLane && state === 'green');
+    });
+}
+
+// Hook into existing pollStats
+const _origPollStats = pollStats;
+// Patch: extend updateDashboardStats to also call mode2
+const _origUpdateDash = updateDashboardStats;
+updateDashboardStats = function (data) {
+    _origUpdateDash(data);
+    updateMode2Visuals(data);
+};
+
+// Load M2 config at startup (non-blocking)
+loadM2ConfigFromBackend();
+
+// ─── MODE 2 ROI DRAWING ──────────────────────────────────────
+const m2RoiState = {};  // { direction: { points: [{x,y}], drawMode: bool, savedPts: [[x,y]] } }
+
+M2_DIRS.forEach(d => {
+    m2RoiState[d] = { points: [], drawMode: false, savedPts: null };
+});
+
+function _getM2Canvas(dir) {
+    return document.getElementById('m2-roi-canvas-' + dir);
+}
+
+function _syncM2CanvasSize(dir) {
+    const canvas = _getM2Canvas(dir);
+    if (!canvas) return;
+    const preview = canvas.closest('.m2-card-preview');
+    if (!preview) return;
+    canvas.width = preview.clientWidth;
+    canvas.height = preview.clientHeight;
+}
+
+function _drawM2ROI(dir) {
+    const canvas = _getM2Canvas(dir);
+    if (!canvas) return;
+    _syncM2CanvasSize(dir);
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const state = m2RoiState[dir];
+
+    // Draw saved ROI (always shown when in draw mode so user sees existing)
+    if (state.savedPts && state.savedPts.length >= 3) {
+        const sw = canvas.width, sh = canvas.height;
+        // Saved points are in natural image coords; canvas covers preview area
+        // We draw them directly as display-space coords (saved relative to display size when saved)
+        ctx.beginPath();
+        ctx.moveTo(state.savedPts[0][0], state.savedPts[0][1]);
+        state.savedPts.forEach(p => ctx.lineTo(p[0], p[1]));
+        ctx.closePath();
+        ctx.strokeStyle = 'rgba(0,232,122,0.7)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(0,232,122,0.08)';
+        ctx.fill();
+    }
+
+    // Draw in-progress points
+    const pts = state.points;
+    pts.forEach((pt, i) => {
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, 5, 0, Math.PI * 2);
+        ctx.fillStyle = '#f5c400';
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        ctx.fillStyle = '#fff';
+        ctx.font = '10px "Share Tech Mono"';
+        ctx.fillText(i + 1, pt.x + 8, pt.y + 9);
+    });
+
+    if (pts.length > 1) {
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y);
+        pts.forEach(p => ctx.lineTo(p.x, p.y));
+        if (pts.length === 4) ctx.closePath();
+        ctx.strokeStyle = '#f5c400';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+    }
+
+    // Status text
+    const statusEl = document.getElementById('m2-roi-status-' + dir);
+    if (statusEl) {
+        if (pts.length > 0) {
+            const rem = 4 - pts.length;
+            statusEl.textContent = rem > 0 ? rem + ' MORE POINT(S)' : 'READY — SAVE ROI';
+            statusEl.style.color = rem > 0 ? 'var(--yellow)' : 'var(--green)';
+        } else if (state.savedPts) {
+            statusEl.textContent = 'ROI ACTIVE';
+            statusEl.style.color = 'var(--green)';
+        } else {
+            statusEl.textContent = 'NO ROI SET';
+            statusEl.style.color = 'var(--text-dim)';
+        }
+    }
+}
+
+function toggleM2ROIDraw(dir) {
+    const state = m2RoiState[dir];
+    state.drawMode = !state.drawMode;
+    state.points = [];  // reset in-progress on toggle
+
+    const canvas = _getM2Canvas(dir);
+    const btn = document.getElementById('m2-roi-draw-' + dir);
+    if (!canvas) return;
+
+    if (state.drawMode) {
+        _syncM2CanvasSize(dir);
+        canvas.classList.add('drawing');
+        if (btn) btn.classList.add('active');
+        _drawM2ROI(dir);
+        toast(dir + ': Click 4 points on preview to draw ROI', 'yellow');
+    } else {
+        canvas.classList.remove('drawing');
+        if (btn) btn.classList.remove('active');
+    }
+}
+
+function clearM2ROI(dir) {
+    const state = m2RoiState[dir];
+    state.points = [];
+    state.savedPts = null;
+
+    const canvas = _getM2Canvas(dir);
+    if (canvas) {
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    const statusEl = document.getElementById('m2-roi-status-' + dir);
+    if (statusEl) { statusEl.textContent = 'NO ROI SET'; statusEl.style.color = 'var(--text-dim)'; }
+
+    // Clear on backend too
+    fetch('/api/mode2_rois', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lane: dir, points: [] })
+    }).then(r => r.json()).then(() => toast(dir + ' ROI cleared', 'yellow'))
+        .catch(() => toast('Network Error', 'red'));
+}
+
+function saveM2ROI(dir) {
+    const state = m2RoiState[dir];
+    if (state.points.length !== 4) {
+        toast('Need exactly 4 points for ' + dir + ' ROI', 'red');
+        return;
+    }
+
+    const canvas = _getM2Canvas(dir);
+    const preview = canvas ? canvas.closest('.m2-card-preview') : null;
+    const img = document.getElementById('m2-prev-' + dir);
+
+    // Scale from canvas display size to natural image size (backend needs natural coords)
+    let pts;
+    if (img && img.naturalWidth && preview) {
+        const scaleX = img.naturalWidth / preview.clientWidth;
+        const scaleY = img.naturalHeight / preview.clientHeight;
+        pts = state.points.map(p => [Math.round(p.x * scaleX), Math.round(p.y * scaleY)]);
+    } else {
+        pts = state.points.map(p => [Math.round(p.x), Math.round(p.y)]);
+    }
+
+    // Keep display-space copy for rendering
+    state.savedPts = state.points.map(p => [p.x, p.y]);
+    state.points = [];
+    state.drawMode = false;
+
+    const cvs = _getM2Canvas(dir);
+    const btn = document.getElementById('m2-roi-draw-' + dir);
+    if (cvs) cvs.classList.remove('drawing');
+    if (btn) btn.classList.remove('active');
+    _drawM2ROI(dir);
+
+    fetch('/api/mode2_rois', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lane: dir, points: pts })
+    }).then(r => r.json()).then(data => {
+        toast(data.message || (dir + ' ROI saved'), data.status === 'success' ? 'green' : 'red');
+    }).catch(() => toast('Network Error', 'red'));
+}
+
+// Wire canvas click events
+M2_DIRS.forEach(dir => {
+    const canvas = _getM2Canvas(dir);
+    if (!canvas) return;
+    canvas.addEventListener('mousedown', e => {
+        const state = m2RoiState[dir];
+        if (!state.drawMode || state.points.length >= 4) return;
+        const rect = canvas.getBoundingClientRect();
+        state.points.push({ x: Math.round(e.clientX - rect.left), y: Math.round(e.clientY - rect.top) });
+        _drawM2ROI(dir);
+    });
+});
+
+// Load saved ROIs from backend and render
+function loadM2ROIsFromBackend() {
+    fetch('/api/mode2_rois')
+        .then(r => r.json())
+        .then(data => {
+            if (!data.rois) return;
+            M2_DIRS.forEach(dir => {
+                const pts = data.rois[dir];
+                if (pts && pts.length >= 3) {
+                    const state = m2RoiState[dir];
+                    const canvas = _getM2Canvas(dir);
+                    const preview = canvas ? canvas.closest('.m2-card-preview') : null;
+                    const img = document.getElementById('m2-prev-' + dir);
+
+                    // Convert natural coords back to display-space
+                    let displayPts;
+                    if (img && img.naturalWidth && preview && preview.clientWidth) {
+                        const scaleX = preview.clientWidth / img.naturalWidth;
+                        const scaleY = preview.clientHeight / img.naturalHeight;
+                        displayPts = pts.map(p => [p[0] * scaleX, p[1] * scaleY]);
+                    } else {
+                        displayPts = pts.map(p => [p[0], p[1]]);
+                    }
+                    state.savedPts = displayPts;
+
+                    const statusEl = document.getElementById('m2-roi-status-' + dir);
+                    if (statusEl) { statusEl.textContent = 'ROI ACTIVE'; statusEl.style.color = 'var(--green)'; }
+
+                    // Show on canvas (needs to be visible)
+                    if (canvas) {
+                        _syncM2CanvasSize(dir);
+                        canvas.classList.add('drawing');
+                        _drawM2ROI(dir);
+                        // Keep canvas visible to show roi overlay permanently
+                    }
+                }
+            });
+        })
+        .catch(() => { });
+}
+
+// Load ROIs when entering Mode 2
+const _origSwitchMode = switchMode;
+switchMode = function (mode) {
+    _origSwitchMode(mode);
+    if (mode === 2) {
+        setTimeout(loadM2ROIsFromBackend, 300);
+    }
+};
+
