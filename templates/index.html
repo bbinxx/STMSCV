@@ -1200,6 +1200,10 @@
                         <input type="number" class="form-input" id="cfg-timeout" step="0.1">
                     </div>
                 </div>
+                <div class="form-group">
+                    <label class="form-label">CYCLE TIMER (S)</label>
+                    <input type="number" class="form-input" id="cfg-cycle-timer" placeholder="30">
+                </div>
                 <div class="section-head">YOLO MODEL</div>
                 <div class="form-group">
                     <label class="form-label">MODEL PATH</label>
@@ -1254,7 +1258,8 @@
                             </select>
                         </div>
                         <div style="display:flex; gap:6px;">
-                            <label style="display:flex; align-items:center; gap:4px; font-family:'Share Tech Mono', monospace; font-size:12px; color:var(--text-bright); cursor:pointer;">
+                            <label
+                                style="display:flex; align-items:center; gap:4px; font-family:'Share Tech Mono', monospace; font-size:12px; color:var(--text-bright); cursor:pointer;">
                                 <input type="checkbox" id="roi-enable-cb" checked>
                                 ENABLE
                             </label>

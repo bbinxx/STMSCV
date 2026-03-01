@@ -66,18 +66,21 @@ automation_state = {
     "yellow_trigger_lane": None
 }
 
-def control_traffic_lights_logic(world, counts, tl_ids):
+def control_traffic_lights_logic(world, counts, tl_ids, cycle_timer=30.0):
     """Consolidated controller logic previously in app.py"""
     global automation_state
     
-    if not counts: return
     current_time = 0.0 # Will be set below
     import time
     import carla
     
+    LANE_ORDER = ["North", "East", "South", "West"]
+    
     current_time = time.time()
     if automation_state["last_switch_time"] == 0:
         automation_state["last_switch_time"] = current_time
+        if automation_state["current_green_lane"] not in LANE_ORDER:
+            automation_state["current_green_lane"] = "North"
 
     # 1. Handle Yellow Phase transition
     if automation_state["is_yellow_phase"]:
@@ -87,16 +90,20 @@ def control_traffic_lights_logic(world, counts, tl_ids):
             automation_state["last_switch_time"] = current_time
             print(f"[AUTO] Transition Complete: {automation_state['current_green_lane']} is now GREEN", flush=True)
     
-    # 2. Check for Lane Switch (Density based)
-    elif current_time - automation_state["last_switch_time"] >= 30.0:
-        max_lane = max(counts, key=counts.get)
-        if max_lane != automation_state["current_green_lane"]:
-            print(f"[AUTO] Density Switch: {automation_state['current_green_lane']} -> YELLOW -> {max_lane}", flush=True)
-            automation_state["is_yellow_phase"] = True
-            automation_state["yellow_trigger_lane"] = max_lane
-            automation_state["last_switch_time"] = current_time
-        else:
-            automation_state["last_switch_time"] = current_time
+    # 2. Check for Lane Switch (Fixed Cycle based)
+    elif current_time - automation_state["last_switch_time"] >= cycle_timer:
+        try:
+            current_idx = LANE_ORDER.index(automation_state["current_green_lane"])
+        except ValueError:
+            current_idx = 0
+            
+        next_idx = (current_idx + 1) % len(LANE_ORDER)
+        next_lane = LANE_ORDER[next_idx]
+        
+        print(f"[AUTO] Cycle Switch: {automation_state['current_green_lane']} -> YELLOW -> {next_lane}", flush=True)
+        automation_state["is_yellow_phase"] = True
+        automation_state["yellow_trigger_lane"] = next_lane
+        automation_state["last_switch_time"] = current_time
 
     # 3. Apply to CARLA Actors
     if not any(tl_ids.values()): return

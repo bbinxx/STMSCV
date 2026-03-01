@@ -48,10 +48,11 @@ def load_config():
         "yolo_model": "",
         "flask_host": "0.0.0.0",
         "flask_port": 5050,
-        "live_feed_url": ""
+        "live_feed_url": "",
+        "cycle_timer": 30
     }
     for k, v in rows:
-        if k in ["carla_port", "flask_port"] and str(v).strip():
+        if k in ["carla_port", "flask_port", "cycle_timer"] and str(v).strip():
             val = int(v)
             # FORCE 5050 if 5000 is detected due to user project conflict
             if k == "flask_port" and val == 5000:
@@ -312,7 +313,8 @@ def vision_processing_loop():
                 
                 # Execute Logic centered in detection.py
                 if global_world is not None:
-                    control_traffic_lights_logic(global_world, lane_counts, TL_IDS)
+                    cycle_time = float(config.get('cycle_timer', 30.0))
+                    control_traffic_lights_logic(global_world, lane_counts, TL_IDS, cycle_timer=cycle_time)
                 
                 # Encode for Flask Video Stream
                 ret, buffer = cv2.imencode('.jpg', frame)
@@ -341,7 +343,13 @@ def traffic_control():
 def api_lane_counts():
     global lane_counts, connection_status, global_world, last_process_time
     auto_data = get_automation_data()
-    remaining = max(0, int(30.0 - (time.time() - auto_data["last_switch_time"])))
+    cycle_time = float(config.get('cycle_timer', 30.0))
+    if auto_data.get("is_yellow_phase"):
+        remaining = max(0, int(3.0 - (time.time() - auto_data["last_switch_time"])))
+        current_cycle = 3.0
+    else:
+        remaining = max(0, int(cycle_time - (time.time() - auto_data["last_switch_time"])))
+        current_cycle = cycle_time
     
     # Current detected state
     is_detecting = "INACTIVE"
@@ -381,6 +389,7 @@ def api_lane_counts():
         "green_lane": auto_data["current_green_lane"],
         "tl_states": tl_states,
         "timer": remaining,
+        "cycle_duration": current_cycle,
         "connection": connection_status,
         "detect_status": is_detecting,
         "feed_status": "ONLINE" if global_camera is not None else "NO SIGNAL"
@@ -582,6 +591,7 @@ def control_panel():
             config['carla_port'] = int(data.get('carla_port', 2000)) if data.get('carla_port') else config.get('carla_port')
             config['carla_timeout'] = float(data.get('carla_timeout', 10.0)) if data.get('carla_timeout') else config.get('carla_timeout')
             config['yolo_model'] = data.get('yolo_model', config.get('yolo_model', ''))
+            config['cycle_timer'] = int(data.get('cycle_timer', 30)) if data.get('cycle_timer') else config.get('cycle_timer', 30)
             save_config(config)
             
             # Reload model if path changed

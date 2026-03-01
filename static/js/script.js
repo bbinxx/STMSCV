@@ -21,7 +21,8 @@ const DEFAULT_STATE = {
         carlaHost: '',
         carlaPort: '',
         timeout: '',
-        yolo: ''
+        yolo: '',
+        cycleTimer: 30
     },
     tlIds: { North: '', South: '', East: '', West: '' },
     rois: {},
@@ -311,6 +312,7 @@ function loadConfigToForm() {
     document.getElementById('cfg-carla-port').value = c.carlaPort || '';
     document.getElementById('cfg-timeout').value = c.timeout || '';
     document.getElementById('cfg-yolo').value = c.yolo || '';
+    document.getElementById('cfg-cycle-timer').value = c.cycleTimer || 30;
     updateTopbarFromConfig();
     updateApiEndpoints();
 }
@@ -320,6 +322,7 @@ function saveConfigFromForm() {
     appState.config.carlaPort = document.getElementById('cfg-carla-port').value;
     appState.config.timeout = document.getElementById('cfg-timeout').value;
     appState.config.yolo = document.getElementById('cfg-yolo').value.trim();
+    appState.config.cycleTimer = document.getElementById('cfg-cycle-timer').value || 30;
     saveState();
     updateTopbarFromConfig();
     updateApiEndpoints();
@@ -358,7 +361,8 @@ function handleConnectionCommand(actionName) {
             carla_host: appState.config.carlaHost,
             carla_port: appState.config.carlaPort,
             carla_timeout: appState.config.timeout,
-            yolo_model: appState.config.yolo
+            yolo_model: appState.config.yolo,
+            cycle_timer: appState.config.cycleTimer
         })
     }).then(r => r.json()).then(data => {
         toast(data.message || 'Success', data.status === 'success' ? 'green' : 'red');
@@ -386,6 +390,7 @@ function loadExternalConfig() {
             appState.config.carlaPort = data.carla_port || '';
             appState.config.timeout = data.carla_timeout || '';
             appState.config.yolo = data.yolo_model || '';
+            appState.config.cycleTimer = data.cycle_timer || 30;
             saveState();
             loadConfigToForm();
         })
@@ -758,7 +763,8 @@ function updatePhaseVisuals(data) {
     const counts = data.counts || {};
 
     if (isConn && greenLane) {
-        let pct = (phTimer / 30) * 100;
+        let cycleDuration = data.cycle_duration || 30;
+        let pct = (phTimer / cycleDuration) * 100;
         document.getElementById('ph-bar').style.width = pct + '%';
         document.getElementById('ph-timer').textContent = phTimer + 's';
         document.getElementById('ph-lane').textContent = greenLane.toUpperCase();
