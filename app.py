@@ -176,12 +176,11 @@ def save_tls(tls_data):
 
 ROIS = load_rois()
 TL_IDS = load_tls()
+ROI_ENABLED = True
 
 # --- 1. NATIVE CARLA VIDEO INPUT ---
 def carla_sensor_callback(image):
     """Callback triggered every time the CARLA camera generates a new image"""
-    # print("[DEBUG] Image received from CARLA camera") # Silent by default to avoid log spam, but let's enable for test
-    print("[DEBUG] Image received from CARLA camera")
     try:
         if not image or not image.raw_data:
             return
@@ -301,21 +300,24 @@ def vision_processing_loop():
                 frame = img_data.copy()
                 
                 # Execute Consolidated Detection & Control Logic
-                print("[TRACE] Starting process_frame", flush=True)
-                frame, lane_counts = process_frame(frame, model, ROIS.copy())
+                rois_to_use = ROIS.copy() if ROI_ENABLED else {}
+                frame, current_lane_counts = process_frame(frame, model, rois_to_use)
+                
+                if ROI_ENABLED:
+                    lane_counts = current_lane_counts
+                else:
+                    lane_counts = {"North": 0, "South": 0, "East": 0, "West": 0}
+                
                 last_process_time = time.time()
                 
                 # Execute Logic centered in detection.py
                 if global_world is not None:
-                    print("[TRACE] Running traffic logic", flush=True)
                     control_traffic_lights_logic(global_world, lane_counts, TL_IDS)
                 
                 # Encode for Flask Video Stream
-                print("[TRACE] Encoding frame", flush=True)
                 ret, buffer = cv2.imencode('.jpg', frame)
                 if ret:
                     latest_frame = buffer.tobytes()
-                    print("[TRACE] Frame encoded successfully", flush=True)
                 else:
                     print("[ERR] Failed to encode frame", flush=True)
             else:
@@ -475,7 +477,14 @@ def roi_panel_route():
         return jsonify({"status": "error", "message": "Invalid point data"})
         
     serializable_rois = {k: v.tolist() for k, v in ROIS.items()}
-    return jsonify({"current_rois": serializable_rois})
+    return jsonify({"current_rois": serializable_rois, "roi_enabled": ROI_ENABLED})
+
+@app.route('/api/roi_enable', methods=['POST'])
+def api_roi_enable():
+    global ROI_ENABLED
+    data = request.json
+    ROI_ENABLED = data.get('enabled', True)
+    return jsonify({"status": "success", "enabled": ROI_ENABLED})
 
 @app.route('/api/tl_test', methods=['POST'])
 def tl_test_mode():

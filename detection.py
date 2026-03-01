@@ -1,9 +1,6 @@
 import cv2
 import numpy as np
 def process_frame(frame, model, rois):
-    # Debug image info
-    print(f"[DEBUG] Frame Process: {type(frame)} Shape: {frame.shape if hasattr(frame, 'shape') else 'None'} Model: {model is not None}")
-    
     # Initialize counts based on rois keys
     lane_counts = {k: 0 for k in rois.keys()}
     
@@ -41,8 +38,6 @@ def process_frame(frame, model, rois):
                 conf = float(box.conf[0])
                 cls = int(box.cls[0])
                 name = model.names[cls]
-                print(f"[DEBUG] Found: {name} ({conf:.2f})")
-                
                 # Calculate center point
                 cx = (x1 + x2) // 2
                 cy = (y1 + y2) // 2
@@ -60,8 +55,6 @@ def process_frame(frame, model, rois):
                         cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 3)
                         cv2.circle(frame, (cx, cy), 6, (0, 0, 255), -1)
                         break 
-        if det_count > 0: 
-            print(f"[DEBUG] Processing successful. Detections found: {det_count}", flush=True)
             
     return frame, lane_counts
 

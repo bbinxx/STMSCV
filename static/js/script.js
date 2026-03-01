@@ -699,8 +699,25 @@ function loadExternalROIs() {
                 drawROIScene();
                 saveState();
             }
+            if (data.roi_enabled !== undefined) {
+                const cb = document.getElementById('roi-enable-cb');
+                if (cb) cb.checked = data.roi_enabled;
+            }
         });
     refreshRoiSetsList();
+}
+
+const roiEnableCb = document.getElementById('roi-enable-cb');
+if (roiEnableCb) {
+    roiEnableCb.addEventListener('change', (e) => {
+        fetch('/api/roi_enable', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled: e.target.checked })
+        }).then(r => r.json()).then(data => {
+            toast('ROI Processing ' + (data.enabled ? 'ENABLED' : 'DISABLED'), 'cyan');
+        });
+    });
 }
 
 loadExternalROIs();
