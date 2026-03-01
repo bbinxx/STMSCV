@@ -22,7 +22,9 @@ const DEFAULT_STATE = {
         carlaPort: '',
         timeout: '',
         yolo: '',
-        cycleTimer: 30
+        cycleTimer: 30,
+        flaskHost: '0.0.0.0',
+        flaskPort: 5050
     },
     tlIds: { North: '', South: '', East: '', West: '' },
     rois: {},
@@ -313,6 +315,8 @@ function loadConfigToForm() {
     document.getElementById('cfg-timeout').value = c.timeout || '';
     document.getElementById('cfg-yolo').value = c.yolo || '';
     document.getElementById('cfg-cycle-timer').value = c.cycleTimer || 30;
+    document.getElementById('cfg-flask-host').value = c.flaskHost || '0.0.0.0';
+    document.getElementById('cfg-flask-port').value = c.flaskPort || 5050;
     updateTopbarFromConfig();
     updateApiEndpoints();
 }
@@ -323,6 +327,8 @@ function saveConfigFromForm() {
     appState.config.timeout = document.getElementById('cfg-timeout').value;
     appState.config.yolo = document.getElementById('cfg-yolo').value.trim();
     appState.config.cycleTimer = document.getElementById('cfg-cycle-timer').value || 30;
+    appState.config.flaskHost = document.getElementById('cfg-flask-host').value.trim() || '0.0.0.0';
+    appState.config.flaskPort = document.getElementById('cfg-flask-port').value || 5050;
     saveState();
     updateTopbarFromConfig();
     updateApiEndpoints();
@@ -362,7 +368,9 @@ function handleConnectionCommand(actionName) {
             carla_port: appState.config.carlaPort,
             carla_timeout: appState.config.timeout,
             yolo_model: appState.config.yolo,
-            cycle_timer: appState.config.cycleTimer
+            cycle_timer: appState.config.cycleTimer,
+            flask_host: appState.config.flaskHost,
+            flask_port: appState.config.flaskPort
         })
     }).then(r => r.json()).then(data => {
         toast(data.message || 'Success', data.status === 'success' ? 'green' : 'red');
@@ -391,6 +399,8 @@ function loadExternalConfig() {
             appState.config.timeout = data.carla_timeout || '';
             appState.config.yolo = data.yolo_model || '';
             appState.config.cycleTimer = data.cycle_timer || 30;
+            appState.config.flaskHost = data.flask_host || '0.0.0.0';
+            appState.config.flaskPort = data.flask_port || 5050;
             saveState();
             loadConfigToForm();
         })
@@ -448,6 +458,22 @@ window.testTL = function (lane, state) {
     }).catch(() => toast("Test Request Failed", "red"));
 };
 
+// ─── UTILS ───────────────────────────────────────────────────
+function getContainedImageBounds(img) {
+    if (!img || !img.naturalWidth || !img.clientWidth) return null;
+    const ratio = img.naturalWidth / img.naturalHeight;
+    let w = img.clientWidth;
+    let h = img.clientHeight;
+    if (w / h > ratio) {
+        w = h * ratio;
+    } else {
+        h = w / ratio;
+    }
+    const x = (img.clientWidth - w) / 2;
+    const y = (img.clientHeight - h) / 2;
+    return { x, y, w, h };
+}
+
 loadTLForm();
 
 // ─── ROI DRAWING ─────────────────────────────────────────────
@@ -487,27 +513,35 @@ function drawROIScene() {
     if (!roiCtx) return;
     roiCtx.clearRect(0, 0, roiCanvas.width, roiCanvas.height);
 
+    const img = document.getElementById('roi-img');
+    const rect = getContainedImageBounds(img);
+    if (!rect) return;
+
     // Draw saved ROIs
-    Object.entries(appState.rois).forEach(([lane, pts]) => {
-        if (!pts || pts.length < 4) return;
-        // Scale from natural to display
-        const img = document.getElementById('roi-img');
-        const sx = roiCanvas.width / (img.naturalWidth || roiCanvas.width);
-        const sy = roiCanvas.height / (img.naturalHeight || roiCanvas.height);
+    Object.entries(appState.rois).forEach(([lane, pts_nat]) => {
+        if (!pts_nat || pts_nat.length < 4) return;
+
+        const sx = rect.w / (img.naturalWidth || 1);
+        const sy = rect.h / (img.naturalHeight || 1);
 
         roiCtx.beginPath();
-        roiCtx.moveTo(pts[0][0] * sx, pts[0][1] * sy);
-        for (let i = 1; i < pts.length; i++) roiCtx.lineTo(pts[i][0] * sx, pts[i][1] * sy);
+        roiCtx.moveTo(rect.x + pts_nat[0][0] * sx, rect.y + pts_nat[0][1] * sy);
+        for (let i = 1; i < pts_nat.length; i++) {
+            roiCtx.lineTo(rect.x + pts_nat[i][0] * sx, rect.y + pts_nat[i][1] * sy);
+        }
         roiCtx.closePath();
-        roiCtx.strokeStyle = 'rgba(0,212,245,0.5)';
-        roiCtx.lineWidth = 2;
+        roiCtx.strokeStyle = 'rgba(0,212,245,0.73)';
+        roiCtx.lineWidth = 2.5;
         roiCtx.stroke();
-        roiCtx.fillStyle = 'rgba(0,212,245,0.06)';
+        roiCtx.fillStyle = 'rgba(0,212,245,0.15)';
         roiCtx.fill();
 
         roiCtx.fillStyle = '#00d4f5';
-        roiCtx.font = 'bold 11px "Share Tech Mono"';
-        roiCtx.fillText(lane.toUpperCase(), pts[0][0] * sx + 4, pts[0][1] * sy - 6);
+        roiCtx.font = 'bold 13px "Share Tech Mono"';
+        roiCtx.shadowBlur = 4;
+        roiCtx.shadowColor = 'rgba(0,0,0,0.8)';
+        roiCtx.fillText(lane.toUpperCase(), rect.x + pts_nat[0][0] * sx + 5, rect.y + pts_nat[0][1] * sy - 8);
+        roiCtx.shadowBlur = 0;
     });
 
     // Draw current points
@@ -568,20 +602,29 @@ document.getElementById('roi-save-btn').addEventListener('click', () => {
     }
     const lane = document.getElementById('roi-lane').value;
     const img = document.getElementById('roi-img');
-    const sx = (img.naturalWidth || roiCanvas.width) / roiCanvas.width;
-    const sy = (img.naturalHeight || roiCanvas.height) / roiCanvas.height;
-    const pts = roiPoints.map(p => [Math.round(p.x * sx), Math.round(p.y * sy)]);
+    const rect = getContainedImageBounds(img);
+    if (!rect) return;
 
-    appState.rois[lane] = pts;
+    // Scale from display point inside image bounds to natural image pixels
+    const pts_nat = roiPoints.map(p => {
+        const x_rel = p.x - rect.x;
+        const y_rel = p.y - rect.y;
+        return [
+            Math.round(x_rel * (img.naturalWidth / rect.w)),
+            Math.round(y_rel * (img.naturalHeight / rect.h))
+        ];
+    });
+
+    appState.rois[lane] = pts_nat;
     roiPoints = [];
     drawROIScene();
 
     fetch('/roi_panel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lane, points: pts })
+        body: JSON.stringify({ lane, points: pts_nat })
     }).then(r => r.json()).then(data => {
-        toast(data.message || 'ROI saved localy', data.status === 'success' ? 'green' : 'red');
+        toast(data.message || 'ROI saved', data.status === 'success' ? 'green' : 'red');
     });
 });
 
@@ -1071,7 +1114,45 @@ function updateMode2Visuals(data) {
         const tile = document.getElementById('m2-tile-' + lane);
         if (tile) tile.classList.toggle('green-active', lane === greenLane && state === 'green');
     });
+
+    // Update Control Mode Button
+    const mode = data.control_mode || 1;
+    const btn = document.getElementById('m2-mode-toggle');
+    if (btn) {
+        if (mode === 2) {
+            btn.textContent = 'RUSH PRIORITY';
+            btn.classList.add('rush');
+        } else {
+            btn.textContent = 'FIXED CYCLE';
+            btn.classList.remove('rush');
+        }
+    }
 }
+
+window.toggleControlMode = function () {
+    const btn = document.getElementById('m2-mode-toggle');
+    const currentIsRush = btn ? btn.classList.contains('rush') : false;
+    const newMode = currentIsRush ? 1 : 2;
+
+    fetch('/api/control_mode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: newMode })
+    }).then(r => r.json()).then(data => {
+        toast('Control Mode: ' + (newMode === 2 ? 'RUSH PRIORITY' : 'FIXED CYCLE'), newMode === 2 ? 'amber' : 'cyan');
+    }).catch(() => toast('Mode Update Failed', 'red'));
+};
+
+window.switchM2ConfigDir = function (dir) {
+    const directions = ['North', 'West', 'South', 'East'];
+    directions.forEach(d => {
+        const tab = document.getElementById('m2-subtab-' + d);
+        const card = document.getElementById('m2-card-' + d);
+        if (tab) tab.classList.toggle('active', d === dir);
+        if (card) card.classList.toggle('active', d === dir);
+    });
+    console.log(`[MODE2] Configuration switched to: ${dir}`);
+};
 
 // Hook into existing pollStats
 const _origPollStats = pollStats;
@@ -1113,20 +1194,24 @@ function _drawM2ROI(dir) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     const state = m2RoiState[dir];
+    const img = document.getElementById('m2-prev-' + dir);
+    const rect = getContainedImageBounds(img);
 
     // Draw saved ROI (always shown when in draw mode so user sees existing)
-    if (state.savedPts && state.savedPts.length >= 3) {
-        const sw = canvas.width, sh = canvas.height;
-        // Saved points are in natural image coords; canvas covers preview area
-        // We draw them directly as display-space coords (saved relative to display size when saved)
+    if (state.savedPts && state.savedPts.length >= 3 && rect) {
+        const sx = rect.w / (img.naturalWidth || 1);
+        const sy = rect.h / (img.naturalHeight || 1);
+
         ctx.beginPath();
-        ctx.moveTo(state.savedPts[0][0], state.savedPts[0][1]);
-        state.savedPts.forEach(p => ctx.lineTo(p[0], p[1]));
+        ctx.moveTo(rect.x + state.savedPts[0][0] * sx, rect.y + state.savedPts[0][1] * sy);
+        state.savedPts.forEach(p => {
+            ctx.lineTo(rect.x + p[0] * sx, rect.y + p[1] * sy);
+        });
         ctx.closePath();
-        ctx.strokeStyle = 'rgba(0,232,122,0.7)';
-        ctx.lineWidth = 2;
+        ctx.strokeStyle = 'rgba(0,232,122,0.75)';
+        ctx.lineWidth = 2.5;
         ctx.stroke();
-        ctx.fillStyle = 'rgba(0,232,122,0.08)';
+        ctx.fillStyle = 'rgba(0,232,122,0.15)';
         ctx.fill();
     }
 
@@ -1227,18 +1312,20 @@ function saveM2ROI(dir) {
     const preview = canvas ? canvas.closest('.m2-card-preview') : null;
     const img = document.getElementById('m2-prev-' + dir);
 
-    // Scale from canvas display size to natural image size (backend needs natural coords)
-    let pts;
-    if (img && img.naturalWidth && preview) {
-        const scaleX = img.naturalWidth / preview.clientWidth;
-        const scaleY = img.naturalHeight / preview.clientHeight;
-        pts = state.points.map(p => [Math.round(p.x * scaleX), Math.round(p.y * scaleY)]);
-    } else {
-        pts = state.points.map(p => [Math.round(p.x), Math.round(p.y)]);
+    // Scale from display point (relative to whole canvas) to natural image pixels
+    const rect = getContainedImageBounds(img);
+    if (!rect) {
+        toast('Preview not ready', 'red');
+        return;
     }
 
-    // Keep display-space copy for rendering
-    state.savedPts = state.points.map(p => [p.x, p.y]);
+    const pts = state.points.map(p => [
+        Math.round((p.x - rect.x) * (img.naturalWidth / rect.w)),
+        Math.round((p.y - rect.y) * (img.naturalHeight / rect.h))
+    ]);
+
+    // Keep natural-space copy for rendering
+    state.savedPts = pts;
     state.points = [];
     state.drawMode = false;
 
@@ -1285,15 +1372,7 @@ function loadM2ROIsFromBackend() {
                     const img = document.getElementById('m2-prev-' + dir);
 
                     // Convert natural coords back to display-space
-                    let displayPts;
-                    if (img && img.naturalWidth && preview && preview.clientWidth) {
-                        const scaleX = preview.clientWidth / img.naturalWidth;
-                        const scaleY = preview.clientHeight / img.naturalHeight;
-                        displayPts = pts.map(p => [p[0] * scaleX, p[1] * scaleY]);
-                    } else {
-                        displayPts = pts.map(p => [p[0], p[1]]);
-                    }
-                    state.savedPts = displayPts;
+                    state.savedPts = pts; // We store national coords now to handle resizing correctly
 
                     const statusEl = document.getElementById('m2-roi-status-' + dir);
                     if (statusEl) { statusEl.textContent = 'ROI ACTIVE'; statusEl.style.color = 'var(--green)'; }

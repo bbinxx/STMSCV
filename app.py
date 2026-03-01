@@ -58,18 +58,11 @@ def load_config():
     }
     for k, v in rows:
         if k in ["carla_port", "flask_port", "cycle_timer"] and str(v).strip():
-            val = int(v)
-            # FORCE 5050 if 5000 is detected due to user project conflict
-            if k == "flask_port" and val == 5000:
-                val = 5050
-            config_data[k] = val
+            config_data[k] = int(v)
         elif k == "carla_timeout" and str(v).strip():
             config_data[k] = float(v)
         else:
             config_data[k] = v
-    # Final safety override
-    if config_data["flask_port"] == 5000:
-        config_data["flask_port"] = 5050
     return config_data
 
 def save_config(config_data):
@@ -95,17 +88,33 @@ def load_yolo_model(path):
     base_dir = os.path.dirname(os.path.abspath(__file__))
     res_path = os.path.abspath(os.path.join(base_dir, path))
     
-    if not os.path.exists(res_path):
-        print(f"[ERR] YOLO model file not found at: {res_path}", flush=True)
-        model = None
-        return False
-        
     try:
-        model = YOLO(res_path)
-        print(f"[INIT] YOLO model loaded successfully: {res_path}", flush=True)
+        # If model doesn't exist at specific path, try loading by name (YOLO auto-downloads)
+        if not os.path.exists(res_path):
+            print(f"[WARN] YOLO model file not found at: {res_path}", flush=True)
+            print("[INFO] Attempting to auto-download model by name...", flush=True)
+            model_name = os.path.basename(path)
+            model = YOLO(model_name)
+        else:
+            try:
+                model = YOLO(res_path)
+            except Exception as load_err:
+                print(f"[ERR] Model file corrupted or invalid: {res_path}. Deleting and retrying download.", flush=True)
+                if os.path.exists(res_path):
+                    os.remove(res_path)
+                model_name = os.path.basename(path)
+                model = YOLO(model_name)
+
+        # WARM UP: Run dummy inference to trigger model fusion in main thread.
+        # This prevents 'AttributeError: bn' when multiple threads predict() simultaneously.
+        if model is not None:
+            dummy = np.zeros((64, 64, 3), dtype=np.uint8)
+            model.predict(dummy, verbose=False)
+            print(f"[INIT] YOLO model loaded and warmed up: {path}", flush=True)
+            
         return True
     except Exception as e:
-        print(f"[ERR] Failed to load YOLO ({res_path}): {e}", flush=True)
+        print(f"[ERR] Failed to load or download YOLO ({path}): {e}", flush=True)
         model = None
         return False
 
@@ -173,9 +182,11 @@ def load_mode2_rois():
 def save_mode2_rois(rois_dict):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
+    # Clear and re-save to handle deletions
+    c.execute("DELETE FROM mode2_rois")
     for lane, pts in rois_dict.items():
         pts_list = pts.tolist() if isinstance(pts, np.ndarray) else pts
-        c.execute("INSERT OR REPLACE INTO mode2_rois (lane, points) VALUES (?, ?)",
+        c.execute("INSERT INTO mode2_rois (lane, points) VALUES (?, ?)",
                   (lane, json.dumps(pts_list)))
     conn.commit()
     conn.close()
@@ -200,8 +211,8 @@ for _d in DIRECTIONS:
 
 def _is_mjpeg_url(src):
     """Returns True if source looks like an HTTP/HTTPS MJPEG stream."""
-    s = src.lower()
-    return s.startswith('http://') or s.startswith('https://')
+    s = str(src).lower()
+    return s.startswith('http://') or s.startswith('https://') or '127.0.0.1' in s or 'localhost' in s
 
 def _read_mjpeg_url(direction, src):
     """
@@ -255,64 +266,74 @@ def _apply_detection_overlay(direction, frame):
     return buf.tobytes()
 
 def mode2_capture_loop(direction):
-    """Background thread: reads frames from any source for one direction."""
+    """Background thread: reads frames from any source for one direction with retries."""
     global mode2_frames, mode2_captures, mode2_raw_frames
 
-    src = mode2_cam_config.get(direction, '').strip()
-    if not src:
-        mode2_frames[direction] = _make_blank_dir_frame(direction)
-        return
+    print(f"[MODE2] Thread started for {direction}", flush=True)
 
-    # ── MJPEG HTTP URL ─────────────────────────────────────────
-    if _is_mjpeg_url(src):
-        for frame in _read_mjpeg_url(direction, src):
-            mode2_raw_frames[direction] = frame
-            mode2_frames[direction] = _apply_detection_overlay(direction, frame)
-            time.sleep(0.033)
-        # Stream ended
-        mode2_frames[direction] = _make_blank_dir_frame(direction)
-        print(f"[MODE2] MJPEG URL stream ended for {direction}", flush=True)
-        return
-
-    # ── Webcam index / video file / RTSP ───────────────────────
-    try:
-        src_val = int(src)
-    except ValueError:
-        src_val = src
-
-    cap = cv2.VideoCapture(src_val)
-    mode2_captures[direction] = cap
-    if not cap.isOpened():
-        mode2_frames[direction] = _make_blank_dir_frame(direction)
-        print(f"[MODE2] Cannot open source for {direction}: {src}", flush=True)
-        return
-
-    print(f"[MODE2] Capture started for {direction}: {src}", flush=True)
     while True:
-        src_now = mode2_cam_config.get(direction, '').strip()
-        if not src_now:
-            break
-        try:
-            val_now = int(src_now)
-        except ValueError:
-            val_now = src_now
-        if val_now != src_val:
-            break
-
-        ret, frame = cap.read()
-        if not ret:
-            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-            time.sleep(0.05)
+        src = mode2_cam_config.get(direction, '').strip()
+        if not src:
+            mode2_frames[direction] = _make_blank_dir_frame(direction)
+            time.sleep(1.0)
             continue
 
-        mode2_raw_frames[direction] = frame
-        mode2_frames[direction] = _apply_detection_overlay(direction, frame)
-        time.sleep(0.033)
+        # Try to open source
+        try:
+            try:
+                src_val = int(src)
+            except ValueError:
+                src_val = src
 
-    cap.release()
-    mode2_captures.pop(direction, None)
-    mode2_frames[direction] = _make_blank_dir_frame(direction)
-    print(f"[MODE2] Capture stopped for {direction}", flush=True)
+            cap = cv2.VideoCapture(src_val)
+            mode2_captures[direction] = cap
+
+            if not cap.isOpened():
+                # Fallback for manual MJPEG if OpenCV fails on a URL
+                if _is_mjpeg_url(src):
+                    print(f"[MODE2] OpenCV failed, trying manual MJPEG for {direction}: {src}", flush=True)
+                    for frame in _read_mjpeg_url(direction, src):
+                        mode2_raw_frames[direction] = frame
+                        mode2_frames[direction] = _apply_detection_overlay(direction, frame)
+                        # Check if source changed while streaming
+                        if mode2_cam_config.get(direction, '').strip() != src: break
+                    
+                print(f"[MODE2] Connection lost/failed for {direction}: {src}. Retrying in 2s...", flush=True)
+                mode2_frames[direction] = _make_blank_dir_frame(direction)
+                cap.release()
+                mode2_captures.pop(direction, None)
+                time.sleep(2.0)
+                continue
+
+            print(f"[MODE2] Capture active for {direction}: {src}", flush=True)
+            while True:
+                # Check if source changed in config
+                src_now = mode2_cam_config.get(direction, '').strip()
+                if src_now != src:
+                    break
+
+                ret, frame = cap.read()
+                if not ret:
+                    # Video file loop or temporary glitch
+                    if isinstance(src_val, str) and not _is_mjpeg_url(src_val):
+                        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                        time.sleep(0.05)
+                        continue
+                    else:
+                        break # Break to outer loop for retry
+
+                mode2_raw_frames[direction] = frame
+                mode2_frames[direction] = _apply_detection_overlay(direction, frame)
+                time.sleep(0.03)
+
+            cap.release()
+            mode2_captures.pop(direction, None)
+            
+        except Exception as e:
+            print(f"[MODE2] Loop error for {direction}: {e}", flush=True)
+            time.sleep(2.0)
+
+    print(f"[MODE2] Thread exiting for {direction}", flush=True)
 
 def start_mode2_direction(direction):
     """Start (or restart) the capture thread for a direction."""
@@ -597,7 +618,8 @@ def api_lane_counts():
         "connection": connection_status,
         "detect_status": is_detecting,
         "feed_status": "ONLINE" if global_camera is not None else "NO SIGNAL",
-        "mode2_counts": {d: mode2_counts.get(d, 0) for d in DIRECTIONS}
+        "mode2_counts": {d: mode2_counts.get(d, 0) for d in DIRECTIONS},
+        "control_mode": get_automation_data().get("control_mode", 1)
     })
 
 @app.route('/api/live_feed')
@@ -797,6 +819,8 @@ def control_panel():
             config['carla_timeout'] = float(data.get('carla_timeout', 10.0)) if data.get('carla_timeout') else config.get('carla_timeout')
             config['yolo_model'] = data.get('yolo_model', config.get('yolo_model', ''))
             config['cycle_timer'] = int(data.get('cycle_timer', 30)) if data.get('cycle_timer') else config.get('cycle_timer', 30)
+            config['flask_host'] = data.get('flask_host', config.get('flask_host', '0.0.0.0'))
+            config['flask_port'] = int(data.get('flask_port', 5050)) if data.get('flask_port') else config.get('flask_port', 5050)
             save_config(config)
             
             # Reload model if path changed
@@ -891,6 +915,14 @@ def mode2_rois_api():
     # GET: return all saved rois serialized
     serializable = {k: v.tolist() for k, v in mode2_rois.items()}
     return jsonify({'status': 'ok', 'rois': serializable})
+
+@app.route('/api/control_mode', methods=['POST'])
+def api_control_mode():
+    from detection import automation_state
+    data = request.json or {}
+    mode = data.get('mode', 1) # 1 or 2
+    automation_state['control_mode'] = mode
+    return jsonify({'status': 'success', 'control_mode': mode})
 
 # Auto-start Mode 2 captures for any saved sources
 for _dir in DIRECTIONS:

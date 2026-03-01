@@ -50,18 +50,6 @@
             color: var(--text-bright);
         }
 
-        body::after {
-            content: '';
-            position: fixed;
-            inset: 0;
-            pointer-events: none;
-            z-index: 9999;
-            background: repeating-linear-gradient(0deg,
-                    transparent,
-                    transparent 2px,
-                    rgba(0, 0, 0, 0.06) 2px,
-                    rgba(0, 0, 0, 0.06) 4px);
-        }
 
         /* ===== TOPBAR ===== */
         #topbar {
@@ -319,16 +307,6 @@
             overflow: hidden;
         }
 
-        #canvas::before {
-            content: '';
-            position: absolute;
-            inset: 0;
-            background-image:
-                linear-gradient(rgba(30, 37, 53, 0.5) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(30, 37, 53, 0.5) 1px, transparent 1px);
-            background-size: 40px 40px;
-            pointer-events: none;
-        }
 
         /* ===== FLOATING WINDOWS ===== */
         .fwin {
@@ -1153,10 +1131,68 @@
         .m2-dir-card {
             background: var(--bg-1);
             border: 1px solid var(--border);
-            display: flex;
+            display: none;
             flex-direction: column;
             overflow: hidden;
             transition: border-color 0.2s;
+            width: 100%;
+            height: 100%;
+        }
+
+        .m2-dir-card.active {
+            display: flex;
+        }
+
+        .m2-config-container {
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            height: 100%;
+            padding: 16px;
+            box-sizing: border-box;
+            gap: 12px;
+        }
+
+        .m2-subtabs {
+            display: flex;
+            gap: 4px;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 2px;
+        }
+
+        .m2-subtab {
+            background: var(--bg-2);
+            border: 1px solid var(--border);
+            border-bottom: none;
+            color: var(--text-dim);
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 2px);
+            padding: 6px 20px;
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+            top: 1px;
+        }
+
+        .m2-subtab:hover {
+            color: var(--text-mid);
+            background: var(--bg-3);
+        }
+
+        .m2-subtab.active {
+            background: var(--bg-1);
+            color: var(--cyan);
+            border-color: var(--border-hi);
+            border-bottom: 1px solid var(--bg-1);
+            z-index: 2;
+        }
+
+        .m2-config-viewport {
+            flex: 1;
+            min-height: 0;
+            background: var(--bg-2);
+            border: 1px solid var(--border);
+            position: relative;
         }
 
         .m2-dir-card:hover {
@@ -1462,18 +1498,46 @@
             box-shadow: 0 0 10px var(--green);
         }
 
-        .m2-count-lbl {
-            font-family: 'Share Tech Mono', monospace;
-            font-size: calc(var(--fs-base) + 4px);
-            color: var(--cyan);
-            line-height: 1;
+        .m2-toggle-wrap {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 0 16px;
         }
 
-        .m2-count-sub {
+        .m2-toggle-label {
             font-family: 'Share Tech Mono', monospace;
-            font-size: calc(var(--fs-base) - 5px);
+            font-size: calc(var(--fs-base) - 3px);
             color: var(--text-dim);
             letter-spacing: 0.1em;
+        }
+
+        .m2-mode-btn {
+            background: rgba(0, 212, 245, 0.1);
+            border: 1px solid var(--cyan);
+            color: var(--cyan);
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 2px);
+            padding: 4px 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            min-width: 120px;
+        }
+
+        .m2-mode-btn:hover {
+            background: var(--cyan);
+            color: var(--bg-1);
+        }
+
+        .m2-mode-btn.rush {
+            border-color: var(--amber);
+            color: var(--amber);
+            background: rgba(255, 140, 0, 0.1);
+        }
+
+        .m2-mode-btn.rush:hover {
+            background: var(--amber);
+            color: var(--bg-1);
         }
 
         /* ===== RESPONSIVE ===== */
@@ -1657,6 +1721,17 @@
                 <button class="fwin-btn close-btn" title="Close">X</button>
             </div>
             <div class="fwin-body">
+                <div class="section-head">FLASK SERVER</div>
+                <div class="form-grid-2">
+                    <div class="form-group">
+                        <label class="form-label">FLASK HOST</label>
+                        <input type="text" class="form-input" id="cfg-flask-host" placeholder="0.0.0.0">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">FLASK PORT</label>
+                        <input type="number" class="form-input" id="cfg-flask-port" placeholder="5050">
+                    </div>
+                </div>
                 <div class="section-head">CARLA SERVER</div>
                 <div class="form-group">
                     <label class="form-label">CARLA HOST</label>
@@ -1961,111 +2036,133 @@
             <div class="m2-tab active" id="m2-tab-config" onclick="switchM2Tab('config')">CONFIGURE INPUTS</div>
             <div class="m2-tab" id="m2-tab-main" onclick="switchM2Tab('main')">MAIN VIEW</div>
             <div class="m2-tab-sep"></div>
+            <div class="m2-toggle-wrap">
+                <span class="m2-toggle-label">CONTROL MODE:</span>
+                <button class="m2-mode-btn" id="m2-mode-toggle" onclick="toggleControlMode()">FIXED CYCLE</button>
+            </div>
+            <div class="m2-tab-sep"></div>
             <button class="m2-save-btn" id="m2-save-all">APPLY &amp; SAVE ALL</button>
         </div>
 
         <div class="m2-content">
-            <!-- CONFIG SECTION: 4 direction cards with source input + preview -->
+            <!-- CONFIG SECTION: Single card full-screen with direction sub-tabs -->
             <div class="m2-section active" id="m2-section-config">
-                <div class="m2-config-grid">
-                    <!-- NORTH -->
-                    <div class="m2-dir-card" id="m2-card-North" data-dir="North">
-                        <div class="m2-card-head">
-                            <span class="m2-dir-badge">NORTH</span>
-                            <div class="m2-card-src-row">
-                                <input type="text" class="m2-src-input" id="m2-src-North"
-                                    placeholder="0  /  http://127.0.0.1:5000/video_feed?id=27  /  rtsp://...">
-                                <button class="m2-apply-btn" onclick="applyM2Source('North')">APPLY</button>
-                            </div>
-                        </div>
-                        <div class="m2-src-hint">Webcam index · HTTP MJPEG URL · RTSP · Video file path</div>
-                        <div class="m2-card-preview">
-                            <img id="m2-prev-North" src="/video_feed/mode2/North" alt="North Preview">
-                            <canvas class="m2-roi-canvas" id="m2-roi-canvas-North" data-dir="North"></canvas>
-                            <div class="m2-prev-badge" id="m2-prev-badge-North">PREVIEW</div>
-                        </div>
-                        <div class="m2-roi-bar">
-                            <span class="m2-roi-label">ROI ZONE</span>
-                            <span class="m2-roi-status" id="m2-roi-status-North">NO ROI SET</span>
-                            <button class="m2-roi-btn" id="m2-roi-draw-North" onclick="toggleM2ROIDraw('North')">DRAW
-                                ROI</button>
-                            <button class="m2-roi-btn clr" onclick="clearM2ROI('North')">CLEAR</button>
-                            <button class="m2-roi-btn save" onclick="saveM2ROI('North')">SAVE ROI</button>
-                        </div>
+                <div class="m2-config-container">
+                    <!-- Direction Sub-Tabs -->
+                    <div class="m2-subtabs">
+                        <button class="m2-subtab active" id="m2-subtab-North"
+                            onclick="switchM2ConfigDir('North')">NORTH</button>
+                        <button class="m2-subtab" id="m2-subtab-West" onclick="switchM2ConfigDir('West')">WEST</button>
+                        <button class="m2-subtab" id="m2-subtab-South"
+                            onclick="switchM2ConfigDir('South')">SOUTH</button>
+                        <button class="m2-subtab" id="m2-subtab-East" onclick="switchM2ConfigDir('East')">EAST</button>
                     </div>
-                    <!-- WEST -->
-                    <div class="m2-dir-card" id="m2-card-West" data-dir="West">
-                        <div class="m2-card-head">
-                            <span class="m2-dir-badge">WEST</span>
-                            <div class="m2-card-src-row">
-                                <input type="text" class="m2-src-input" id="m2-src-West"
-                                    placeholder="0  /  http://127.0.0.1:5000/video_feed?id=27  /  rtsp://...">
-                                <button class="m2-apply-btn" onclick="applyM2Source('West')">APPLY</button>
+
+                    <div class="m2-config-viewport">
+                        <!-- NORTH -->
+                        <div class="m2-dir-card active" id="m2-card-North" data-dir="North">
+                            <div class="m2-card-head">
+                                <span class="m2-dir-badge">NORTH SOURCE</span>
+                                <div class="m2-card-src-row">
+                                    <input type="text" class="m2-src-input" id="m2-src-North"
+                                        placeholder="0  /  http://127.0.0.1:5000/video_feed?id=27  /  rtsp://...">
+                                    <button class="m2-apply-btn" onclick="applyM2Source('North')">APPLY</button>
+                                </div>
+                            </div>
+                            <div class="m2-src-hint">Webcam index · HTTP MJPEG URL · RTSP · Video file path</div>
+                            <div class="m2-card-preview">
+                                <img id="m2-prev-North" src="/video_feed/mode2/North" alt="North Preview">
+                                <canvas class="m2-roi-canvas" id="m2-roi-canvas-North" data-dir="North"></canvas>
+                                <div class="m2-prev-badge" id="m2-prev-badge-North">PREVIEW</div>
+                            </div>
+                            <div class="m2-roi-bar">
+                                <span class="m2-roi-label">ROI ZONE MANAGEMENT</span>
+                                <span class="m2-roi-status" id="m2-roi-status-North">NO ROI SET</span>
+                                <button class="m2-roi-btn" id="m2-roi-draw-North"
+                                    onclick="toggleM2ROIDraw('North')">DRAW
+                                    ROI</button>
+                                <button class="m2-roi-btn clr" onclick="clearM2ROI('North')">CLEAR</button>
+                                <button class="m2-roi-btn save" onclick="saveM2ROI('North')">SAVE ROI</button>
                             </div>
                         </div>
-                        <div class="m2-src-hint">Webcam index · HTTP MJPEG URL · RTSP · Video file path</div>
-                        <div class="m2-card-preview">
-                            <img id="m2-prev-West" src="/video_feed/mode2/West" alt="West Preview">
-                            <canvas class="m2-roi-canvas" id="m2-roi-canvas-West" data-dir="West"></canvas>
-                            <div class="m2-prev-badge" id="m2-prev-badge-West">PREVIEW</div>
-                        </div>
-                        <div class="m2-roi-bar">
-                            <span class="m2-roi-label">ROI ZONE</span>
-                            <span class="m2-roi-status" id="m2-roi-status-West">NO ROI SET</span>
-                            <button class="m2-roi-btn" id="m2-roi-draw-West" onclick="toggleM2ROIDraw('West')">DRAW
-                                ROI</button>
-                            <button class="m2-roi-btn clr" onclick="clearM2ROI('West')">CLEAR</button>
-                            <button class="m2-roi-btn save" onclick="saveM2ROI('West')">SAVE ROI</button>
-                        </div>
-                    </div>
-                    <!-- SOUTH -->
-                    <div class="m2-dir-card" id="m2-card-South" data-dir="South">
-                        <div class="m2-card-head">
-                            <span class="m2-dir-badge">SOUTH</span>
-                            <div class="m2-card-src-row">
-                                <input type="text" class="m2-src-input" id="m2-src-South"
-                                    placeholder="0  /  http://127.0.0.1:5000/video_feed?id=27  /  rtsp://...">
-                                <button class="m2-apply-btn" onclick="applyM2Source('South')">APPLY</button>
+
+                        <!-- WEST -->
+                        <div class="m2-dir-card" id="m2-card-West" data-dir="West">
+                            <div class="m2-card-head">
+                                <span class="m2-dir-badge">WEST SOURCE</span>
+                                <div class="m2-card-src-row">
+                                    <input type="text" class="m2-src-input" id="m2-src-West"
+                                        placeholder="0  /  http://127.0.0.1:5000/video_feed?id=27  /  rtsp://...">
+                                    <button class="m2-apply-btn" onclick="applyM2Source('West')">APPLY</button>
+                                </div>
+                            </div>
+                            <div class="m2-src-hint">Webcam index · HTTP MJPEG URL · RTSP · Video file path</div>
+                            <div class="m2-card-preview">
+                                <img id="m2-prev-West" src="/video_feed/mode2/West" alt="West Preview">
+                                <canvas class="m2-roi-canvas" id="m2-roi-canvas-West" data-dir="West"></canvas>
+                                <div class="m2-prev-badge" id="m2-prev-badge-West">PREVIEW</div>
+                            </div>
+                            <div class="m2-roi-bar">
+                                <span class="m2-roi-label">ROI ZONE MANAGEMENT</span>
+                                <span class="m2-roi-status" id="m2-roi-status-West">NO ROI SET</span>
+                                <button class="m2-roi-btn" id="m2-roi-draw-West" onclick="toggleM2ROIDraw('West')">DRAW
+                                    ROI</button>
+                                <button class="m2-roi-btn clr" onclick="clearM2ROI('West')">CLEAR</button>
+                                <button class="m2-roi-btn save" onclick="saveM2ROI('West')">SAVE ROI</button>
                             </div>
                         </div>
-                        <div class="m2-src-hint">Webcam index · HTTP MJPEG URL · RTSP · Video file path</div>
-                        <div class="m2-card-preview">
-                            <img id="m2-prev-South" src="/video_feed/mode2/South" alt="South Preview">
-                            <canvas class="m2-roi-canvas" id="m2-roi-canvas-South" data-dir="South"></canvas>
-                            <div class="m2-prev-badge" id="m2-prev-badge-South">PREVIEW</div>
-                        </div>
-                        <div class="m2-roi-bar">
-                            <span class="m2-roi-label">ROI ZONE</span>
-                            <span class="m2-roi-status" id="m2-roi-status-South">NO ROI SET</span>
-                            <button class="m2-roi-btn" id="m2-roi-draw-South" onclick="toggleM2ROIDraw('South')">DRAW
-                                ROI</button>
-                            <button class="m2-roi-btn clr" onclick="clearM2ROI('South')">CLEAR</button>
-                            <button class="m2-roi-btn save" onclick="saveM2ROI('South')">SAVE ROI</button>
-                        </div>
-                    </div>
-                    <!-- EAST -->
-                    <div class="m2-dir-card" id="m2-card-East" data-dir="East">
-                        <div class="m2-card-head">
-                            <span class="m2-dir-badge">EAST</span>
-                            <div class="m2-card-src-row">
-                                <input type="text" class="m2-src-input" id="m2-src-East"
-                                    placeholder="0  /  http://127.0.0.1:5000/video_feed?id=27  /  rtsp://...">
-                                <button class="m2-apply-btn" onclick="applyM2Source('East')">APPLY</button>
+
+                        <!-- SOUTH -->
+                        <div class="m2-dir-card" id="m2-card-South" data-dir="South">
+                            <div class="m2-card-head">
+                                <span class="m2-dir-badge">SOUTH SOURCE</span>
+                                <div class="m2-card-src-row">
+                                    <input type="text" class="m2-src-input" id="m2-src-South"
+                                        placeholder="0  /  http://127.0.0.1:5000/video_feed?id=27  /  rtsp://...">
+                                    <button class="m2-apply-btn" onclick="applyM2Source('South')">APPLY</button>
+                                </div>
+                            </div>
+                            <div class="m2-src-hint">Webcam index · HTTP MJPEG URL · RTSP · Video file path</div>
+                            <div class="m2-card-preview">
+                                <img id="m2-prev-South" src="/video_feed/mode2/South" alt="South Preview">
+                                <canvas class="m2-roi-canvas" id="m2-roi-canvas-South" data-dir="South"></canvas>
+                                <div class="m2-prev-badge" id="m2-prev-badge-South">PREVIEW</div>
+                            </div>
+                            <div class="m2-roi-bar">
+                                <span class="m2-roi-label">ROI ZONE MANAGEMENT</span>
+                                <span class="m2-roi-status" id="m2-roi-status-South">NO ROI SET</span>
+                                <button class="m2-roi-btn" id="m2-roi-draw-South"
+                                    onclick="toggleM2ROIDraw('South')">DRAW
+                                    ROI</button>
+                                <button class="m2-roi-btn clr" onclick="clearM2ROI('South')">CLEAR</button>
+                                <button class="m2-roi-btn save" onclick="saveM2ROI('South')">SAVE ROI</button>
                             </div>
                         </div>
-                        <div class="m2-src-hint">Webcam index · HTTP MJPEG URL · RTSP · Video file path</div>
-                        <div class="m2-card-preview">
-                            <img id="m2-prev-East" src="/video_feed/mode2/East" alt="East Preview">
-                            <canvas class="m2-roi-canvas" id="m2-roi-canvas-East" data-dir="East"></canvas>
-                            <div class="m2-prev-badge" id="m2-prev-badge-East">PREVIEW</div>
-                        </div>
-                        <div class="m2-roi-bar">
-                            <span class="m2-roi-label">ROI ZONE</span>
-                            <span class="m2-roi-status" id="m2-roi-status-East">NO ROI SET</span>
-                            <button class="m2-roi-btn" id="m2-roi-draw-East" onclick="toggleM2ROIDraw('East')">DRAW
-                                ROI</button>
-                            <button class="m2-roi-btn clr" onclick="clearM2ROI('East')">CLEAR</button>
-                            <button class="m2-roi-btn save" onclick="saveM2ROI('East')">SAVE ROI</button>
+
+                        <!-- EAST -->
+                        <div class="m2-dir-card" id="m2-card-East" data-dir="East">
+                            <div class="m2-card-head">
+                                <span class="m2-dir-badge">EAST SOURCE</span>
+                                <div class="m2-card-src-row">
+                                    <input type="text" class="m2-src-input" id="m2-src-East"
+                                        placeholder="0  /  http://127.0.0.1:5000/video_feed?id=27  /  rtsp://...">
+                                    <button class="m2-apply-btn" onclick="applyM2Source('East')">APPLY</button>
+                                </div>
+                            </div>
+                            <div class="m2-src-hint">Webcam index · HTTP MJPEG URL · RTSP · Video file path</div>
+                            <div class="m2-card-preview">
+                                <img id="m2-prev-East" src="/video_feed/mode2/East" alt="East Preview">
+                                <canvas class="m2-roi-canvas" id="m2-roi-canvas-East" data-dir="East"></canvas>
+                                <div class="m2-prev-badge" id="m2-prev-badge-East">PREVIEW</div>
+                            </div>
+                            <div class="m2-roi-bar">
+                                <span class="m2-roi-label">ROI ZONE MANAGEMENT</span>
+                                <span class="m2-roi-status" id="m2-roi-status-East">NO ROI SET</span>
+                                <button class="m2-roi-btn" id="m2-roi-draw-East" onclick="toggleM2ROIDraw('East')">DRAW
+                                    ROI</button>
+                                <button class="m2-roi-btn clr" onclick="clearM2ROI('East')">CLEAR</button>
+                                <button class="m2-roi-btn save" onclick="saveM2ROI('East')">SAVE ROI</button>
+                            </div>
                         </div>
                     </div>
                 </div>
