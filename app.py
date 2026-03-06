@@ -196,6 +196,7 @@ mode2_rois       = load_mode2_rois()      # {lane: np.array (4,2)}
 mode2_frames     = {d: None for d in DIRECTIONS}  # {lane: jpeg_bytes (with detection overlay)}
 mode2_raw_frames = {}                     # {lane: raw np frame (for detection)}
 mode2_counts     = {d: 0 for d in DIRECTIONS}  # {lane: int}
+mode2_scores     = {d: 0 for d in DIRECTIONS}  # {lane: int} weighted scores
 mode2_captures   = {}  # {lane: cv2.VideoCapture or urllib stream}
 mode2_threads    = {}  # {lane: Thread}
 
@@ -251,16 +252,18 @@ def _apply_detection_overlay(direction, frame):
     Runs YOLO detection on `frame` within the direction's ROI (if set).
     Updates mode2_counts[direction]. Returns annotated frame bytes.
     """
-    global model, mode2_rois, mode2_counts
+    global model, mode2_rois, mode2_counts, mode2_scores
     roi_map = {}
     if direction in mode2_rois:
         roi_map[direction] = mode2_rois[direction]
 
-    annotated, counts = process_frame(frame.copy(), model, roi_map)
+    annotated, counts, scores = process_frame(frame.copy(), model, roi_map)
     if roi_map:
         mode2_counts[direction] = counts.get(direction, 0)
+        mode2_scores[direction] = scores.get(direction, 0)
     else:
         mode2_counts[direction] = 0
+        mode2_scores[direction] = 0
 
     _, buf = cv2.imencode('.jpg', annotated)
     return buf.tobytes()
@@ -513,7 +516,7 @@ def get_traffic_lights(world):
 
 # --- 3. YOLOv8 CV ENGINE & PROCESSING LOOP ---
 def vision_processing_loop():
-    """Separate thread to process images async from CARLA ticks"""
+    """CARLA camera mode: process frames and control lights"""
     global latest_frame, lane_counts, global_world, last_process_time
     print("[INIT] Vision Processing Thread Started", flush=True)
     
@@ -525,23 +528,26 @@ def vision_processing_loop():
                 
                 frame = img_data.copy()
                 
-                # Execute Consolidated Detection & Control Logic
                 rois_to_use = ROIS.copy() if ROI_ENABLED else {}
-                frame, current_lane_counts = process_frame(frame, model, rois_to_use)
+                frame, current_lane_counts, current_lane_scores = process_frame(frame, model, rois_to_use)
                 
                 if ROI_ENABLED:
                     lane_counts = current_lane_counts
                 else:
                     lane_counts = {"North": 0, "South": 0, "East": 0, "West": 0}
+                    current_lane_scores = {"North": 0, "South": 0, "East": 0, "West": 0}
                 
                 last_process_time = time.time()
                 
-                # Execute Logic centered in detection.py
+                # Pass scores directly — no stale dict lookup
                 if global_world is not None:
                     cycle_time = float(config.get('cycle_timer', 30.0))
-                    control_traffic_lights_logic(global_world, lane_counts, TL_IDS, cycle_timer=cycle_time)
+                    control_traffic_lights_logic(
+                        global_world, lane_counts, TL_IDS,
+                        cycle_timer=cycle_time,
+                        lane_scores=current_lane_scores
+                    )
                 
-                # Encode for Flask Video Stream
                 ret, buffer = cv2.imencode('.jpg', frame)
                 if ret:
                     latest_frame = buffer.tobytes()
@@ -552,6 +558,32 @@ def vision_processing_loop():
         except Exception as e:
             print(f"[ERR] Vision Loop Error: {e}", flush=True)
             time.sleep(0.5)
+
+def mode2_traffic_control_loop():
+    """
+    Mode 2 (multi-camera): runs control_traffic_lights_logic every second
+    using per-direction counts & weighted scores from detection overlay threads.
+    Only active when control_mode == 2.
+    """
+    from detection import automation_state
+    print("[INIT] Mode2 Traffic Control Thread Started", flush=True)
+
+    while True:
+        try:
+            if automation_state.get("control_mode", 1) == 2 and global_world is not None:
+                # Build counts and scores from mode2 detection results
+                counts = {d: mode2_counts.get(d, 0) for d in DIRECTIONS}
+                scores = {d: mode2_scores.get(d, 0) for d in DIRECTIONS}
+                cycle_time = float(config.get('cycle_timer', 30.0))
+                control_traffic_lights_logic(
+                    global_world, counts, TL_IDS,
+                    cycle_timer=cycle_time,
+                    lane_scores=scores
+                )
+            time.sleep(1.0)
+        except Exception as e:
+            print(f"[ERR] Mode2 Control Loop Error: {e}", flush=True)
+            time.sleep(2.0)
 
 # --- Flask Web Output ---
 @app.route('/')
@@ -937,6 +969,10 @@ if __name__ == '__main__':
         # 2. Start YOLO CV processing in background thread
         processor_thread = threading.Thread(target=vision_processing_loop, daemon=True)
         processor_thread.start()
+
+        # 3. Start Mode 2 traffic control thread
+        mode2_ctrl_thread = threading.Thread(target=mode2_traffic_control_loop, daemon=True)
+        mode2_ctrl_thread.start()
         
         # 3. Start Flask Web Server
         flask_host = config.get('flask_host', '0.0.0.0')
