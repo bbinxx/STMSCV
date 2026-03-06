@@ -28,47 +28,49 @@ def process_frame(frame, model, rois):
     # Run YOLO inference
     if model is not None:
         # Detect: bicycle(1), car(2), motorcycle(3), bus(5), truck(7)
-        results = model.predict(frame, classes=[1, 2, 3, 5, 7], conf=0.5, verbose=False)
+        # conf=0.25 reduces false positives; iou=0.45 suppresses duplicate boxes
+        results = model.predict(frame, classes=[1, 2, 3, 5, 7], conf=0.25, iou=0.45, imgsz=1280, verbose=False)
         
         for r in results:
             for box in r.boxes:
                 x1, y1, x2, y2 = map(int, box.xyxy[0])
-                conf = float(box.conf[0])
                 cls = int(box.cls[0])
                 cls_name = model.names[cls].lower()
                 
-                # Calculate center point
                 cx = (x1 + x2) // 2
                 cy = (y1 + y2) // 2
+
+                # Multi-point anchor check: center, bottom-center, bottom-left, bottom-right
+                # Vehicle counted if ANY of these points falls inside the ROI polygon —
+                # catches large/angled vehicles missed by single ground-point test
+                check_pts = [
+                    (float(cx),  float(cy)),           # centroid
+                    (float(cx),  float(y2)),            # bottom-center (ground contact)
+                    (float(x1 + (x2 - x1) * 0.25), float(y2)),  # bottom-left quarter
+                    (float(x1 + (x2 - x1) * 0.75), float(y2)),  # bottom-right quarter
+                ]
                 
-                # Identify Emergency Vehicles based on class name substrings
+                # Identify Emergency Vehicles
                 is_emergency = any(kw in cls_name for kw in ['ambulance', 'fire', 'emergency', 'police'])
                 
-                # ROI Match Check & Visualization
-                is_inside_roi = False
+                # ROI Match Check — count in first matching ROI only (no double-count)
                 for lane_name, points in rois.items():
-                    if cv2.pointPolygonTest(points.astype(np.float32), (float(cx), float(cy)), False) >= 0:
+                    roi_poly = points.astype(np.float32)
+                    if any(cv2.pointPolygonTest(roi_poly, pt, False) >= 0 for pt in check_pts):
                         lane_counts[lane_name] += 1
-                        is_inside_roi = True
                         
-                        # Drawing Logic for COUNTED vehicles
-                        if is_emergency:
-                            # RED/BLUE FLASHER STYLE for EMERGENCY
-                            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 4) # Thick Red
-                            cv2.putText(frame, f"!!! {cls_name.upper()} !!!", (x1, y1 - 10), 
-                                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-                        else:
-                            # STANDARD VEHICLE
-                            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                            cv2.circle(frame, (cx, cy), 5, (0, 0, 255), -1)
-                            cv2.putText(frame, f"{cls_name.upper()}", (x1, y1 - 10), 
-                                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-                        break 
+                        color = (0, 0, 255) if is_emergency else (0, 255, 0)
+                        thickness = 3 if is_emergency else 2
                         
-                # IF ROI_ENABLED and not inside any ROI, we hide the detection box (user request: "ROI region only")
-                # If ROIs is empty (e.g. ROI Disabled), we can show all or show nothing? 
-                # User specifically asked for "ROI region only".
-            
+                        cv2.rectangle(frame, (x1, y1), (x2, y2), color, thickness)
+                        # Draw all anchor points for debug visibility
+                        for pt in check_pts:
+                            cv2.circle(frame, (int(pt[0]), int(pt[1])), 3, (0, 80, 255), -1)
+                        label = f"!!! {cls_name.upper()} !!!" if is_emergency else f"{cls_name.upper()}"
+                        cv2.putText(frame, label, (x1, y1 - 10), 
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+                        break  # count once per vehicle
+                        
     return frame, lane_counts
 
 # --- Consolidated Traffic Control State ---
