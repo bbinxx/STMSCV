@@ -315,6 +315,7 @@ function loadConfigToForm() {
     document.getElementById('cfg-timeout').value = c.timeout || '';
     document.getElementById('cfg-yolo').value = c.yolo || '';
     document.getElementById('cfg-cycle-timer').value = c.cycleTimer || 30;
+    document.getElementById('cfg-live-url').value = c.liveFeedUrl || '';
     document.getElementById('cfg-flask-host').value = c.flaskHost || '0.0.0.0';
     document.getElementById('cfg-flask-port').value = c.flaskPort || 5050;
     updateTopbarFromConfig();
@@ -327,6 +328,7 @@ function saveConfigFromForm() {
     appState.config.timeout = document.getElementById('cfg-timeout').value;
     appState.config.yolo = document.getElementById('cfg-yolo').value.trim();
     appState.config.cycleTimer = document.getElementById('cfg-cycle-timer').value || 30;
+    appState.config.liveFeedUrl = document.getElementById('cfg-live-url').value.trim();
     appState.config.flaskHost = document.getElementById('cfg-flask-host').value.trim() || '0.0.0.0';
     appState.config.flaskPort = document.getElementById('cfg-flask-port').value || 5050;
     saveState();
@@ -369,6 +371,7 @@ function handleConnectionCommand(actionName) {
             carla_timeout: appState.config.timeout,
             yolo_model: appState.config.yolo,
             cycle_timer: appState.config.cycleTimer,
+            live_feed_url: appState.config.liveFeedUrl,
             flask_host: appState.config.flaskHost,
             flask_port: appState.config.flaskPort
         })
@@ -401,6 +404,7 @@ function loadExternalConfig() {
             appState.config.cycleTimer = data.cycle_timer || 30;
             appState.config.flaskHost = data.flask_host || '0.0.0.0';
             appState.config.flaskPort = data.flask_port || 5050;
+            appState.config.liveFeedUrl = data.live_feed_url || '';
             saveState();
             loadConfigToForm();
         })

@@ -1,4 +1,8 @@
-import carla
+try:
+    import carla
+except ImportError:
+    carla = None
+    print("[WARN] carla module not available; CARLA integration disabled", flush=True)
 import cv2
 import numpy as np
 import threading
@@ -11,7 +15,7 @@ import urllib.request
 from ultralytics import YOLO
 from flask import Flask, Response, render_template, request, redirect, url_for, jsonify
 
-from detection import process_frame, control_traffic_lights_logic, get_automation_data
+from detection import process_frame, control_traffic_lights_logic, get_automation_data, DETECTION_IMG_SIZE
 
 app = Flask(__name__)
 
@@ -57,11 +61,14 @@ def load_config():
         "cycle_timer": 30
     }
     for k, v in rows:
-        if k in ["carla_port", "flask_port", "cycle_timer"] and str(v).strip():
-            config_data[k] = int(v)
-        elif k == "carla_timeout" and str(v).strip():
-            config_data[k] = float(v)
-        else:
+        try:
+            if k in ["carla_port", "flask_port", "cycle_timer"] and v is not None and str(v).strip():
+                config_data[k] = int(v)
+            elif k == "carla_timeout" and v is not None and str(v).strip():
+                config_data[k] = float(v)
+            else:
+                config_data[k] = v
+        except (ValueError, TypeError):
             config_data[k] = v
     return config_data
 
@@ -84,9 +91,11 @@ def load_yolo_model(path):
         print("[INIT] YOLO model path is empty, detection DISABLED", flush=True)
         return False
     
-    # Resolve path relative to script directory
+    # resolve path relative to script directory
     base_dir = os.path.dirname(os.path.abspath(__file__))
     res_path = os.path.abspath(os.path.join(base_dir, path))
+
+    print(f"[INIT] YOLO detection image size set to {DETECTION_IMG_SIZE}", flush=True)
     
     try:
         # If model doesn't exist at specific path, try loading by name (YOLO auto-downloads)
@@ -108,6 +117,22 @@ def load_yolo_model(path):
         # WARM UP: Run dummy inference to trigger model fusion in main thread.
         # This prevents 'AttributeError: bn' when multiple threads predict() simultaneously.
         if model is not None:
+            try:
+                # if a GPU is available, move model to it for faster inference
+                import torch
+                if torch.cuda.is_available():
+                    model.to('cuda:0')
+                    print("[INIT] YOLO model moved to CUDA:0", flush=True)
+                # fuse conv+bns to speed up realtime inference
+                try:
+                    model.fuse()
+                    print("[INIT] YOLO model fused for speed", flush=True)
+                except Exception:
+                    pass
+            except ImportError:
+                pass
+
+            # WARM UP: small dummy prediction to finish initialization
             dummy = np.zeros((64, 64, 3), dtype=np.uint8)
             model.predict(dummy, verbose=False)
             print(f"[INIT] YOLO model loaded and warmed up: {path}", flush=True)
@@ -120,9 +145,16 @@ def load_yolo_model(path):
 
 # Initial load
 load_yolo_model(config.get("yolo_model", ""))
+# live-feed thread will be started lazily inside the vision_processing_loop when
+# the loop first runs.  doing it here before _start_external_feed is defined would
+# raise a NameError if the URL had been saved earlier.
 
-# Thread-safe queue for CARLA camera images
+# Thread-safe queue for CARLA camera images (and optionally external feed)
 image_queue = queue.Queue(maxsize=1)
+
+# External feed support (config.live_feed_url)
+external_feed_thread = None        # current worker thread
+external_feed_src = ""           # URL being read by worker
 
 # Global states for Flask streaming and tracking
 latest_frame = None
@@ -340,11 +372,11 @@ def mode2_capture_loop(direction):
 
 def start_mode2_direction(direction):
     """Start (or restart) the capture thread for a direction."""
-    old_cap = mode2_captures.pop(direction, None)
-    if old_cap:
-        try: old_cap.release()
-        except: pass
-    t = threading.Thread(target=mode2_capture_loop, args=(direction,), daemon=True)
+    # Check if thread is already running
+    if direction in mode2_threads and mode2_threads[direction].is_alive():
+        return
+
+    t = threading.Thread(target=mode2_capture_loop, args=(direction,), daemon=True, name=f"Mode2_{direction}")
     mode2_threads[direction] = t
     t.start()
 
@@ -409,15 +441,19 @@ ROI_ENABLED = True
 
 # --- 1. NATIVE CARLA VIDEO INPUT ---
 def carla_sensor_callback(image):
-    """Callback triggered every time the CARLA camera generates a new image"""
+    """Callback triggered every time the CARLA camera generates a new image.
+    If an external `live_feed_url` is configured, we ignore the CARLA stream so
+    that the queue is not polluted with unwanted frames.
+    """
     try:
+        # if a user has configured an API/URL feed, prefer that source
+        if config.get("live_feed_url", "").strip():
+            return
         if not image or not image.raw_data:
             return
-            
         array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
         array = np.reshape(array, (image.height, image.width, 4))
-        array = array[:, :, :3] # Keep BGR channels (CARLA outputs BGRA, OpenCV uses BGR)
-        
+        array = array[:, :, :3]  # Keep BGR channels (CARLA outputs BGRA, OpenCV uses BGR)
         # Store in queue, dropping oldest if full to maintain real-time
         if image_queue.full():
             try:
@@ -434,18 +470,21 @@ def setup_carla_task():
     connection_status = "Connecting..."
     
     try:
+        if carla is None:
+            connection_status = "CARLA MODULE MISSING"
+            return
         if global_camera:
             try:
                 global_camera.destroy()
             except:
                 pass
-                
+        
         host = config.get("carla_host")
         port = config.get("carla_port")
         if not host or not port:
             connection_status = "Waiting for configuration in Control Panel"
             return
-            
+        
         timeout = config.get("carla_timeout") or 5.0
         client = carla.Client(str(host), int(port))
         client.set_timeout(float(timeout))
@@ -510,8 +549,110 @@ def bg_connect_carla():
     thread = threading.Thread(target=setup_carla_task, daemon=True)
     thread.start()
 
+
+# --- EXTERNAL / API BASED LIVE FEED SUPPORT ---
+
+def _read_external_mjpeg(src):
+    """Generator that yields frames from a multipart MJPEG HTTP stream."""
+    buf = b''
+    try:
+        stream = urllib.request.urlopen(src, timeout=10)
+        while True:
+            chunk = stream.read(4096)
+            if not chunk:
+                return
+            buf += chunk
+            a = buf.find(b'\xff\xd8')
+            b_ = buf.find(b'\xff\xd9')
+            if a != -1 and b_ != -1 and b_ > a:
+                jpg = buf[a:b_+2]
+                buf = buf[b_+2:]
+                frame = cv2.imdecode(np.frombuffer(jpg, np.uint8), cv2.IMREAD_COLOR)
+                if frame is not None:
+                    yield frame
+    except Exception as e:
+        print(f"[EXT] MJPEG read error: {e}", flush=True)
+        return
+
+
+def _start_external_feed(src):
+    """Launch or restart the thread reading from `src` and pushing into image_queue."""
+    global external_feed_thread, external_feed_src
+    # signal any existing thread to stop by changing source
+    external_feed_src = src or ""
+    if external_feed_thread and external_feed_thread.is_alive():
+        # worker will exit when it sees external_feed_src changed
+        pass
+
+    def worker():
+        global external_feed_src
+        current_src = src
+        cap = None
+        print(f"[EXT] thread starting for {current_src}", flush=True)
+        while external_feed_src == current_src and current_src.strip():
+            try:
+                # attempt to open capture (numeric index or URL)
+                try:
+                    idx = int(current_src)
+                except Exception:
+                    idx = current_src
+
+                cap = cv2.VideoCapture(idx)
+                if not cap.isOpened():
+                    # fallback to manual MJPEG if URL looks like one
+                    if _is_mjpeg_url(current_src):
+                        for frame in _read_external_mjpeg(current_src):
+                            if external_feed_src != current_src:
+                                break
+                            if image_queue.full():
+                                try: image_queue.get_nowait()
+                                except queue.Empty: pass
+                            image_queue.put(frame)
+                            time.sleep(0.03)
+                        continue
+                    # otherwise wait and retry
+                    print(f"[EXT] failed to open {current_src}, retrying", flush=True)
+                    time.sleep(2)
+                    continue
+
+                # read loop
+                while external_feed_src == current_src:
+                    ret, frame = cap.read()
+                    if not ret:
+                        # if it's a file, loop it
+                        if isinstance(idx, str) and not _is_mjpeg_url(idx):
+                            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                            time.sleep(0.05)
+                            continue
+                        break
+                    if image_queue.full():
+                        try: image_queue.get_nowait()
+                        except queue.Empty: pass
+                    image_queue.put(frame)
+                    time.sleep(0.03)
+                cap.release()
+                cap = None
+                time.sleep(1)
+            except Exception as e:
+                print(f"[EXT] error reading {current_src}: {e}", flush=True)
+                time.sleep(2)
+        if cap:
+            try: cap.release()
+            except: pass
+        print(f"[EXT] thread stopping for {current_src}", flush=True)
+
+    external_feed_thread = threading.Thread(target=worker, daemon=True)
+    external_feed_thread.start()
+
+
+def stop_external_feed():
+    global external_feed_src
+    external_feed_src = ""  # signal worker to exit
+
 # --- 4. TRAFFIC LIGHT CONTROL HELPERS ---
 def get_traffic_lights(world):
+    if carla is None or world is None:
+        return []
     return world.get_actors().filter('*traffic_light*')
 
 # --- 3. YOLOv8 CV ENGINE & PROCESSING LOOP ---
@@ -522,10 +663,15 @@ def vision_processing_loop():
     
     while True:
         try:
+            # make sure external feed thread is alive when a URL is configured
+            if config.get('live_feed_url', '').strip():
+                if external_feed_thread is None or not external_feed_thread.is_alive():
+                    _start_external_feed(config['live_feed_url'])
+
             if not image_queue.empty():
                 img_data = image_queue.get()
-                if img_data is None: continue
-                
+                if img_data is None:
+                    continue
                 frame = img_data.copy()
                 
                 rois_to_use = ROIS.copy() if ROI_ENABLED else {}
@@ -574,7 +720,11 @@ def mode2_traffic_control_loop():
                 # Build counts and scores from mode2 detection results
                 counts = {d: mode2_counts.get(d, 0) for d in DIRECTIONS}
                 scores = {d: mode2_scores.get(d, 0) for d in DIRECTIONS}
-                cycle_time = float(config.get('cycle_timer', 30.0))
+                
+                # Get cycle timer from main config
+                current_config = load_config()
+                cycle_time = float(current_config.get('cycle_timer', 30.0))
+                
                 control_traffic_lights_logic(
                     global_world, counts, TL_IDS,
                     cycle_timer=cycle_time,
@@ -620,7 +770,7 @@ def api_lane_counts():
             
     # Real-time traffic light states from world
     tl_states = {}
-    if global_world:
+    if global_world and carla is not None:
         for lane, tid in TL_IDS.items():
             if tid and str(tid).strip():
                 try:
@@ -638,7 +788,7 @@ def api_lane_counts():
             else:
                 tl_states[lane] = "red"
     else:
-        # Fallback if no connection
+        # Fallback if no connection or CARLA not installed
         tl_states = {l: "red" for l in ["North", "South", "East", "West"]}
         
     return json.dumps({
@@ -649,7 +799,7 @@ def api_lane_counts():
         "cycle_duration": current_cycle,
         "connection": connection_status,
         "detect_status": is_detecting,
-        "feed_status": "ONLINE" if global_camera is not None else "NO SIGNAL",
+        "feed_status": "EXTERNAL" if (global_camera is None and external_feed_src and external_feed_thread and external_feed_thread.is_alive()) else ("ONLINE" if global_camera is not None else "NO SIGNAL"),
         "mode2_counts": {d: mode2_counts.get(d, 0) for d in DIRECTIONS},
         "control_mode": get_automation_data().get("control_mode", 1)
     })
@@ -659,13 +809,18 @@ def api_live_feed():
     """Alias for 3rd party apps"""
     response = Response(generate_video_stream(), mimetype='multipart/x-mixed-replace; boundary=frame')
     response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
     return response
 
 @app.route('/api/camera/status')
 def api_camera_status():
-    """Checks if the camera actor is active"""
-    global global_camera
-    status = "active" if global_camera is not None else "inactive"
+    """Checks if *any* active video source is present (CARLA or external URL)."""
+    global global_camera, external_feed_thread, external_feed_src
+    status = "inactive"
+    if global_camera is not None:
+        status = "carla"
+    elif external_feed_src and external_feed_thread and external_feed_thread.is_alive():
+        status = "external"
     return json.dumps({"status": status, "timestamp": time.time()})
 
 @app.route('/api/config')
@@ -758,15 +913,17 @@ def api_roi_enable():
 def tl_test_mode():
     """Manually set a traffic light state for testing"""
     global global_world
+    if carla is None:
+        return jsonify({"status": "error", "message": "CARLA module missing"})
     if not global_world:
         return jsonify({"status": "error", "message": "CARLA not connected"})
         
-    data = request.json
+    data = request.json or {}
     actor_id = data.get('actor_id')
-    state_str = data.get('state') # "red", "yellow", "green"
+    state_str = data.get('state', '').lower() # "red", "yellow", "green"
     
-    if not actor_id:
-        return jsonify({"status": "error", "message": "No Actor ID provided"})
+    if not actor_id or not state_str:
+        return jsonify({"status": "error", "message": "Missing Actor ID or state"})
         
     try:
         tl_actor = global_world.get_actor(int(actor_id))
@@ -846,6 +1003,8 @@ def control_panel():
         # Simple Save
         if action in ['save_only', 'toggle_connect']:
             old_path = config.get('yolo_model', '')
+            old_url = config.get('live_feed_url', '')
+
             config['carla_host'] = data.get('carla_host', config.get('carla_host', ''))
             config['carla_port'] = int(data.get('carla_port', 2000)) if data.get('carla_port') else config.get('carla_port')
             config['carla_timeout'] = float(data.get('carla_timeout', 10.0)) if data.get('carla_timeout') else config.get('carla_timeout')
@@ -853,14 +1012,27 @@ def control_panel():
             config['cycle_timer'] = int(data.get('cycle_timer', 30)) if data.get('cycle_timer') else config.get('cycle_timer', 30)
             config['flask_host'] = data.get('flask_host', config.get('flask_host', '0.0.0.0'))
             config['flask_port'] = int(data.get('flask_port', 5050)) if data.get('flask_port') else config.get('flask_port', 5050)
+            # new field:
+            config['live_feed_url'] = data.get('live_feed_url', config.get('live_feed_url', ''))
             save_config(config)
-            
-            # Reload model if path changed
+
+            # reload model if path changed
             if config['yolo_model'] != old_path:
                 load_yolo_model(config['yolo_model'])
+
+            # start/stop external feed if URL changed
+            if config['live_feed_url'] != old_url:
+                if config['live_feed_url'].strip():
+                    print(f"[HMI] Starting external feed: {config['live_feed_url']}", flush=True)
+                    _start_external_feed(config['live_feed_url'])
+                else:
+                    print("[HMI] Stopping external feed", flush=True)
+                    stop_external_feed()
             
         if action == 'toggle_connect':
-            if global_camera:
+            if carla is None:
+                msg = "CARLA integration unavailable"
+            elif global_camera:
                 disconnect_carla()
                 msg = "Disconnected from simulator"
             else:
@@ -895,7 +1067,7 @@ def video_feed():
     """MJPEG stream for live dashboard and ROI setup windows"""
     return Response(generate_video_stream(), 
                    mimetype='multipart/x-mixed-replace; boundary=frame',
-                   headers={'Access-Control-Allow-Origin': '*'})
+                   headers={'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache, no-store, must-revalidate'})
 
 # --- MODE 2 ROUTES ---
 @app.route('/video_feed/mode2/<direction>')

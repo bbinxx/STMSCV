@@ -17,6 +17,7 @@ A professional, high-performance Traffic Management HMI that uses Computer Visio
 
 ### 3. Comprehensive HMI (Human-Machine Interface)
 - **Live Dashboard**: Real-time vehicle counts, signal states, and countdown timers.
+- **External Live Feed**: Optionally point the main stream at any HTTP/RTSP/MJPEG/source URL or camera device; the app will ingest it, run detection, and expose it via the `/video_feed` and `/api/live_feed` endpoints.
 - **Multi-Camera (Mode 2)**: Support for 4 simultaneous video sources (Webcams, RTSP, Video Files, or MJPEG URLs).
 - **CARLA Integration**: Direct connection to the CARLA Simulator to sync virtual traffic lights and camera views.
 
