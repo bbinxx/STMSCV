@@ -26,7 +26,7 @@ VEHICLE_KEYWORDS = ['bicycle', 'car', 'motorcycle', 'bus', 'train', 'truck', 'bo
 
 # target inference size (must be <= 1280 for YOLOv8 by default)
 # lower values speed up detection at the cost of accuracy; user can tweak as needed
-DETECTION_IMG_SIZE = 320  # reduce default for faster real‑time performance
+DETECTION_IMG_SIZE = 640  # reduce default for faster real‑time performance
 
 # lock name added to model when first used
 _YOLO_LOCK_ATTR = '_yolo_lock'

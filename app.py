@@ -178,23 +178,10 @@ DIRECTIONS = ['North', 'South', 'East', 'West']
 
 # ── camera config ─────────────────────────────────────────────
 def load_mode2_cameras():
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("SELECT lane, source FROM mode2_cameras")
-    rows = c.fetchall()
-    conn.close()
-    data = {d: '' for d in DIRECTIONS}
-    for lane, src in rows:
-        data[lane] = src or ''
-    return data
+    return {d: '' for d in DIRECTIONS}
 
 def save_mode2_cameras(cam_cfg):
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    for lane, src in cam_cfg.items():
-        c.execute("INSERT OR REPLACE INTO mode2_cameras (lane, source) VALUES (?, ?)", (lane, src))
-    conn.commit()
-    conn.close()
+    pass
 
 # ── ROI config ────────────────────────────────────────────────
 def load_mode2_rois():
@@ -284,7 +271,10 @@ def _apply_detection_overlay(direction, frame):
     Runs YOLO detection on `frame` within the direction's ROI (if set).
     Updates mode2_counts[direction]. Returns annotated frame bytes.
     """
-    global model, mode2_rois, mode2_counts, mode2_scores
+    global model, mode2_rois, mode2_counts, mode2_scores, last_process_time
+
+    last_process_time = time.time()
+
     roi_map = {}
     if direction in mode2_rois:
         roi_map[direction] = mode2_rois[direction]
@@ -716,8 +706,9 @@ def mode2_traffic_control_loop():
 
     while True:
         try:
-            if automation_state.get("control_mode", 1) == 2 and global_world is not None:
-                # Build counts and scores from mode2 detection results
+            # We must process mode2 controls if we have active mode2 threads.
+            # To prevent conflict with main vision loop, let's proxy the current counts to the logic.
+            if global_world is not None:
                 counts = {d: mode2_counts.get(d, 0) for d in DIRECTIONS}
                 scores = {d: mode2_scores.get(d, 0) for d in DIRECTIONS}
                 
@@ -1093,7 +1084,6 @@ def mode2_config_api():
                     mode2_cam_config[lane] = new_src
                     changed.append(lane)
         if changed:
-            save_mode2_cameras(mode2_cam_config)
             for lane in changed:
                 start_mode2_direction(lane)
         return jsonify({'status': 'success', 'updated': changed, 'config': mode2_cam_config})

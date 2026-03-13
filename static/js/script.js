@@ -779,7 +779,10 @@ let phaseMax = 30;
 
 function updateDashboardStats(data) {
     const isConn = data.connection === "Connected";
-    const counts = isConn ? (data.counts || {}) : { North: 0, South: 0, East: 0, West: 0 };
+    let counts = { North: 0, South: 0, East: 0, West: 0 };
+    if (isConn) {
+        counts = (typeof currentMode !== 'undefined' && currentMode === 2) ? (data.mode2_counts || {}) : (data.counts || {});
+    }
     const greenLane = isConn ? data.green_lane : null;
     const timer = isConn ? data.timer : 0;
 
