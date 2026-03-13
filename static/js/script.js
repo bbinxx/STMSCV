@@ -21,7 +21,10 @@ const DEFAULT_STATE = {
         carlaHost: '',
         carlaPort: '',
         timeout: '',
-        yolo: ''
+        yolo: '',
+        cycleTimer: 30,
+        flaskHost: '0.0.0.0',
+        flaskPort: 5050
     },
     tlIds: { North: '', South: '', East: '', West: '' },
     rois: {},
@@ -311,6 +314,10 @@ function loadConfigToForm() {
     document.getElementById('cfg-carla-port').value = c.carlaPort || '';
     document.getElementById('cfg-timeout').value = c.timeout || '';
     document.getElementById('cfg-yolo').value = c.yolo || '';
+    document.getElementById('cfg-cycle-timer').value = c.cycleTimer || 30;
+    document.getElementById('cfg-live-url').value = c.liveFeedUrl || '';
+    document.getElementById('cfg-flask-host').value = c.flaskHost || '0.0.0.0';
+    document.getElementById('cfg-flask-port').value = c.flaskPort || 5050;
     updateTopbarFromConfig();
     updateApiEndpoints();
 }
@@ -320,6 +327,10 @@ function saveConfigFromForm() {
     appState.config.carlaPort = document.getElementById('cfg-carla-port').value;
     appState.config.timeout = document.getElementById('cfg-timeout').value;
     appState.config.yolo = document.getElementById('cfg-yolo').value.trim();
+    appState.config.cycleTimer = document.getElementById('cfg-cycle-timer').value || 30;
+    appState.config.liveFeedUrl = document.getElementById('cfg-live-url').value.trim();
+    appState.config.flaskHost = document.getElementById('cfg-flask-host').value.trim() || '0.0.0.0';
+    appState.config.flaskPort = document.getElementById('cfg-flask-port').value || 5050;
     saveState();
     updateTopbarFromConfig();
     updateApiEndpoints();
@@ -338,10 +349,12 @@ function updateApiEndpoints() {
 }
 
 function updateLiveFeedSrc() {
+    console.log("[DEBUG] Initializing Live Feed UI sources");
     const liveImg = document.getElementById('live-img');
     const roiImg = document.getElementById('roi-img');
-    if (liveImg) liveImg.src = '/video_feed';
-    if (roiImg) roiImg.src = '/video_feed';
+    const timestamp = new Date().getTime();
+    if (liveImg) liveImg.src = '/video_feed?t=' + timestamp;
+    if (roiImg) roiImg.src = '/video_feed?t=' + timestamp;
 }
 
 function handleConnectionCommand(actionName) {
@@ -356,7 +369,11 @@ function handleConnectionCommand(actionName) {
             carla_host: appState.config.carlaHost,
             carla_port: appState.config.carlaPort,
             carla_timeout: appState.config.timeout,
-            yolo_model: appState.config.yolo
+            yolo_model: appState.config.yolo,
+            cycle_timer: appState.config.cycleTimer,
+            live_feed_url: appState.config.liveFeedUrl,
+            flask_host: appState.config.flaskHost,
+            flask_port: appState.config.flaskPort
         })
     }).then(r => r.json()).then(data => {
         toast(data.message || 'Success', data.status === 'success' ? 'green' : 'red');
@@ -384,6 +401,10 @@ function loadExternalConfig() {
             appState.config.carlaPort = data.carla_port || '';
             appState.config.timeout = data.carla_timeout || '';
             appState.config.yolo = data.yolo_model || '';
+            appState.config.cycleTimer = data.cycle_timer || 30;
+            appState.config.flaskHost = data.flask_host || '0.0.0.0';
+            appState.config.flaskPort = data.flask_port || 5050;
+            appState.config.liveFeedUrl = data.live_feed_url || '';
             saveState();
             loadConfigToForm();
         })
@@ -396,8 +417,6 @@ function loadTLForm() {
     ['North', 'South', 'East', 'West'].forEach(lane => {
         const el = document.getElementById('tl-' + lane.toLowerCase());
         if (el) el.value = appState.tlIds[lane] || '';
-        const idEl = document.getElementById('tl-id-' + lane);
-        if (idEl) idEl.textContent = appState.tlIds[lane] ? '#' + appState.tlIds[lane] : '--';
     });
 }
 
@@ -410,7 +429,7 @@ document.getElementById('btn-update-tl').addEventListener('click', () => {
     });
     saveState();
 
-    // POST to backend
+    // POST to backend for validation and storage
     fetch('/tl_panel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -421,15 +440,43 @@ document.getElementById('btn-update-tl').addEventListener('click', () => {
             tl_west: appState.tlIds.West || null
         })
     }).then(r => r.json()).then(data => {
-        if (data.status === 'success') {
-            toast('Traffic light bindings updated', 'green');
-            addLog('OK', 'TL actor IDs updated: N=' + appState.tlIds.North +
-                ' S=' + appState.tlIds.South + ' E=' + appState.tlIds.East + ' W=' + appState.tlIds.West);
-        } else {
-            toast('Failed to update bindngs', 'red');
-        }
+        toast(data.message || 'Bindings updated', data.status === 'success' ? 'green' : 'red');
     }).catch(() => toast('Network Error', 'red'));
 });
+
+// Manual TL Test Helper for R/Y/G buttons
+window.testTL = function (lane, state) {
+    const actorId = document.getElementById('tl-' + lane.toLowerCase()).value;
+    if (!actorId) {
+        toast("Enter an Actor ID first", "red");
+        return;
+    }
+    toast(`Testing ${lane}:${actorId} -> ${state.toUpperCase()}...`, 'cyan');
+
+    fetch('/api/tl_test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ actor_id: actorId, state: state })
+    }).then(r => r.json()).then(data => {
+        toast(data.message, data.status === 'success' ? 'green' : 'red');
+    }).catch(() => toast("Test Request Failed", "red"));
+};
+
+// ─── UTILS ───────────────────────────────────────────────────
+function getContainedImageBounds(img) {
+    if (!img || !img.naturalWidth || !img.clientWidth) return null;
+    const ratio = img.naturalWidth / img.naturalHeight;
+    let w = img.clientWidth;
+    let h = img.clientHeight;
+    if (w / h > ratio) {
+        w = h * ratio;
+    } else {
+        h = w / ratio;
+    }
+    const x = (img.clientWidth - w) / 2;
+    const y = (img.clientHeight - h) / 2;
+    return { x, y, w, h };
+}
 
 loadTLForm();
 
@@ -441,41 +488,64 @@ let roiPoints = [];
 function resizeROICanvas() {
     const img = document.getElementById('roi-img');
     if (!roiCanvas || !img) return;
-    roiCanvas.width = img.offsetWidth;
-    roiCanvas.height = img.offsetHeight;
-    drawROIScene();
+
+    // Use clientWidth/Height of the container or the image's displayed size
+    const w = img.clientWidth || img.width;
+    const h = img.clientHeight || img.height;
+
+    if (w > 0 && h > 0) {
+        roiCanvas.width = w;
+        roiCanvas.height = h;
+        drawROIScene();
+    }
 }
 
 const roiImg = document.getElementById('roi-img');
-if (roiImg) roiImg.addEventListener('load', () => setTimeout(resizeROICanvas, 100));
+if (roiImg) {
+    roiImg.addEventListener('load', () => resizeROICanvas());
+    // Also poll slightly because offsetWidth can be 0 if window is display:none when it loads
+    setInterval(() => {
+        if (roiCanvas && roiCanvas.width !== roiImg.clientWidth && roiImg.clientWidth > 0) {
+            resizeROICanvas();
+        }
+    }, 1000);
+}
 window.addEventListener('resize', resizeROICanvas);
-setTimeout(resizeROICanvas, 600);
+setTimeout(resizeROICanvas, 500);
 
 function drawROIScene() {
     if (!roiCtx) return;
     roiCtx.clearRect(0, 0, roiCanvas.width, roiCanvas.height);
 
+    const img = document.getElementById('roi-img');
+    const rect = getContainedImageBounds(img);
+    if (!rect) return;
+
     // Draw saved ROIs
-    Object.entries(appState.rois).forEach(([lane, pts]) => {
-        if (!pts || pts.length < 4) return;
-        // Scale from natural to display
-        const img = document.getElementById('roi-img');
-        const sx = roiCanvas.width / (img.naturalWidth || roiCanvas.width);
-        const sy = roiCanvas.height / (img.naturalHeight || roiCanvas.height);
+    Object.entries(appState.rois).forEach(([lane, pts_nat]) => {
+        if (!pts_nat || pts_nat.length < 4) return;
+
+        const sx = rect.w / (img.naturalWidth || 1);
+        const sy = rect.h / (img.naturalHeight || 1);
 
         roiCtx.beginPath();
-        roiCtx.moveTo(pts[0][0] * sx, pts[0][1] * sy);
-        for (let i = 1; i < pts.length; i++) roiCtx.lineTo(pts[i][0] * sx, pts[i][1] * sy);
+        roiCtx.moveTo(rect.x + pts_nat[0][0] * sx, rect.y + pts_nat[0][1] * sy);
+        for (let i = 1; i < pts_nat.length; i++) {
+            roiCtx.lineTo(rect.x + pts_nat[i][0] * sx, rect.y + pts_nat[i][1] * sy);
+        }
         roiCtx.closePath();
-        roiCtx.strokeStyle = 'rgba(0,212,245,0.5)';
-        roiCtx.lineWidth = 2;
+        roiCtx.strokeStyle = 'rgba(0,212,245,0.73)';
+        roiCtx.lineWidth = 2.5;
         roiCtx.stroke();
-        roiCtx.fillStyle = 'rgba(0,212,245,0.06)';
+        roiCtx.fillStyle = 'rgba(0,212,245,0.15)';
         roiCtx.fill();
 
         roiCtx.fillStyle = '#00d4f5';
-        roiCtx.font = 'bold 11px "Share Tech Mono"';
-        roiCtx.fillText(lane.toUpperCase(), pts[0][0] * sx + 4, pts[0][1] * sy - 6);
+        roiCtx.font = 'bold 13px "Share Tech Mono"';
+        roiCtx.shadowBlur = 4;
+        roiCtx.shadowColor = 'rgba(0,0,0,0.8)';
+        roiCtx.fillText(lane.toUpperCase(), rect.x + pts_nat[0][0] * sx + 5, rect.y + pts_nat[0][1] * sy - 8);
+        roiCtx.shadowBlur = 0;
     });
 
     // Draw current points
@@ -536,20 +606,29 @@ document.getElementById('roi-save-btn').addEventListener('click', () => {
     }
     const lane = document.getElementById('roi-lane').value;
     const img = document.getElementById('roi-img');
-    const sx = (img.naturalWidth || roiCanvas.width) / roiCanvas.width;
-    const sy = (img.naturalHeight || roiCanvas.height) / roiCanvas.height;
-    const pts = roiPoints.map(p => [Math.round(p.x * sx), Math.round(p.y * sy)]);
+    const rect = getContainedImageBounds(img);
+    if (!rect) return;
 
-    appState.rois[lane] = pts;
+    // Scale from display point inside image bounds to natural image pixels
+    const pts_nat = roiPoints.map(p => {
+        const x_rel = p.x - rect.x;
+        const y_rel = p.y - rect.y;
+        return [
+            Math.round(x_rel * (img.naturalWidth / rect.w)),
+            Math.round(y_rel * (img.naturalHeight / rect.h))
+        ];
+    });
+
+    appState.rois[lane] = pts_nat;
     roiPoints = [];
     drawROIScene();
 
     fetch('/roi_panel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lane, points: pts })
+        body: JSON.stringify({ lane, points: pts_nat })
     }).then(r => r.json()).then(data => {
-        toast(data.message || 'ROI saved localy', data.status === 'success' ? 'green' : 'red');
+        toast(data.message || 'ROI saved', data.status === 'success' ? 'green' : 'red');
     });
 });
 
@@ -627,7 +706,10 @@ document.getElementById('btn-update-tl').addEventListener('click', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
     }).then(r => r.json()).then(res => {
-        toast(res.status === 'success' ? 'TL Bindings Updated' : 'Update Failed', res.status === 'success' ? 'green' : 'red');
+        // Show actual server message in toast (e.g. invalid actor ID warning)
+        const toastMsg = res.message || (res.status === 'success' ? 'TL Bindings Updated' : 'Update Failed');
+        toast(toastMsg, res.status === 'success' ? 'green' : 'red');
+
         if (res.status === 'success') {
             appState.tlIds.North = data.tl_north;
             appState.tlIds.South = data.tl_south;
@@ -669,8 +751,25 @@ function loadExternalROIs() {
                 drawROIScene();
                 saveState();
             }
+            if (data.roi_enabled !== undefined) {
+                const cb = document.getElementById('roi-enable-cb');
+                if (cb) cb.checked = data.roi_enabled;
+            }
         });
     refreshRoiSetsList();
+}
+
+const roiEnableCb = document.getElementById('roi-enable-cb');
+if (roiEnableCb) {
+    roiEnableCb.addEventListener('change', (e) => {
+        fetch('/api/roi_enable', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled: e.target.checked })
+        }).then(r => r.json()).then(data => {
+            toast('ROI Processing ' + (data.enabled ? 'ENABLED' : 'DISABLED'), 'cyan');
+        });
+    });
 }
 
 loadExternalROIs();
@@ -680,7 +779,10 @@ let phaseMax = 30;
 
 function updateDashboardStats(data) {
     const isConn = data.connection === "Connected";
-    const counts = isConn ? (data.counts || {}) : { North: 0, South: 0, East: 0, West: 0 };
+    let counts = { North: 0, South: 0, East: 0, West: 0 };
+    if (isConn) {
+        counts = (typeof currentMode !== 'undefined' && currentMode === 2) ? (data.mode2_counts || {}) : (data.counts || {});
+    }
     const greenLane = isConn ? data.green_lane : null;
     const timer = isConn ? data.timer : 0;
 
@@ -700,14 +802,19 @@ function updateDashboardStats(data) {
     });
 
     document.getElementById('tb-total-veh').textContent = total;
-    updatePhaseVisuals(greenLane, timer);
+    updatePhaseVisuals(data);
 }
 
-function updatePhaseVisuals(greenLane, timer) {
-    const isConn = !!greenLane;
-    const phTimer = timer;
-    if (isConn) {
-        let pct = (phTimer / 30) * 100;
+function updatePhaseVisuals(data) {
+    const isConn = data.connection === "Connected";
+    const greenLane = data.green_lane;
+    const phTimer = data.timer;
+    const tlStates = data.tl_states || {};
+    const counts = data.counts || {};
+
+    if (isConn && greenLane) {
+        let cycleDuration = data.cycle_duration || 30;
+        let pct = (phTimer / cycleDuration) * 100;
         document.getElementById('ph-bar').style.width = pct + '%';
         document.getElementById('ph-timer').textContent = phTimer + 's';
         document.getElementById('ph-lane').textContent = greenLane.toUpperCase();
@@ -718,13 +825,17 @@ function updatePhaseVisuals(greenLane, timer) {
     }
 
     // Update Topbar
-    document.getElementById('tb-phase-lane').textContent = isConn ? greenLane.toUpperCase() : '--';
-    document.getElementById('tb-cycle-timer').textContent = isConn ? phTimer + 's' : '--s';
+    document.getElementById('tb-phase-lane').textContent = (isConn && greenLane) ? greenLane.toUpperCase() : '--';
+    document.getElementById('tb-cycle-timer').textContent = (isConn && phTimer !== undefined) ? phTimer + 's' : '--s';
 
-    // Update TL visuals
+    // Update TL Visual States and Counts
     ['North', 'South', 'East', 'West'].forEach(lane => {
-        const isGreen = isConn && lane === greenLane;
-        setTLState(lane, isGreen ? 'green' : 'red');
+        const state = tlStates[lane] || 'red';
+        setTLState(lane, state);
+
+        // Show current count in the Mapping window's Visual State box (matching user's screenshot)
+        const idEl = document.getElementById('tl-id-' + lane);
+        if (idEl) idEl.textContent = counts[lane] !== undefined ? counts[lane] : '--';
     });
 }
 
@@ -737,14 +848,28 @@ function setTLState(lane, state) {
     });
 }
 
+let lastBackendStatus = true;
+let lastFeedStatus = "NO SIGNAL";
+
 function pollStats() {
     fetch('/api/lane_counts')
         .then(r => r.json())
         .then(data => {
+            if (!lastBackendStatus || (lastFeedStatus === "NO SIGNAL" && data.feed_status === "ONLINE")) {
+                // Backend recovered, OR feed came online. Reload the stream to fix frozen MJPEG
+                console.log("[DEBUG] Connection recovered or Feed came Online, reloading Live Feed...");
+                updateLiveFeedSrc();
+                lastBackendStatus = true;
+            }
+            lastFeedStatus = data.feed_status;
+
             updateDashboardStats(data);
             setCarlaStatus(data.connection);
+            setDetectionStatus(data.detect_status);
+            setFeedStatus(data.feed_status);
         })
         .catch(() => {
+            lastBackendStatus = false;
             setCarlaStatus("Disconnected");
             // Clear stats on network error
             updateDashboardStats({ connection: "Disconnected" });
@@ -761,8 +886,8 @@ function setCarlaStatus(statusString) {
     const isConnected = statusString === "Connected";
     const isConnecting = statusString === "Connecting...";
 
-    txt.textContent = statusString.toUpperCase();
-    tbEl.textContent = statusString.toUpperCase();
+    if (txt) txt.textContent = statusString.toUpperCase();
+    if (tbEl) tbEl.textContent = statusString.toUpperCase();
 
     if (toggleBtn) {
         toggleBtn.textContent = isConnected ? "DISCONNECT" : (isConnecting ? "CONNECTING..." : "CONNECT");
@@ -770,20 +895,51 @@ function setCarlaStatus(statusString) {
     }
 
     if (isConnected) {
-        dot.className = 'dot green';
-        txt.style.color = 'var(--green)';
-        tbEl.className = 'tb-stat-value green';
+        if (dot) dot.className = 'dot green';
+        if (txt) txt.style.color = 'var(--green)';
+        if (tbEl) tbEl.className = 'tb-stat-value green';
         if (connBtn) connBtn.classList.add('connected');
     } else if (isConnecting) {
-        dot.className = 'dot yellow';
-        txt.style.color = 'var(--yellow)';
-        tbEl.className = 'tb-stat-value yellow';
+        if (dot) dot.className = 'dot yellow';
+        if (txt) txt.style.color = 'var(--yellow)';
+        if (tbEl) tbEl.className = 'tb-stat-value yellow';
         if (connBtn) connBtn.classList.remove('connected');
     } else {
-        dot.className = 'dot red';
-        txt.style.color = 'var(--red)';
-        tbEl.className = 'tb-stat-value red';
+        if (dot) dot.className = 'dot red';
+        if (txt) txt.style.color = 'var(--red)';
+        if (tbEl) tbEl.className = 'tb-stat-value red';
         if (connBtn) connBtn.classList.remove('connected');
+    }
+}
+
+function setDetectionStatus(status) {
+    const dot = document.getElementById('dot-detect');
+    const txt = document.getElementById('stat-detect');
+    if (!dot || !txt) return;
+    txt.textContent = status.toUpperCase();
+    if (status === "ACTIVE") {
+        dot.className = 'dot green';
+        txt.style.color = 'var(--green)';
+    } else {
+        dot.className = 'dot';
+        txt.style.color = 'var(--text-dim)';
+    }
+}
+
+function setFeedStatus(status) {
+    const dot = document.getElementById('dot-feed');
+    const txt = document.getElementById('stat-feed');
+    if (!dot || !txt) return;
+    txt.textContent = status.toUpperCase();
+    if (status === "ONLINE") {
+        dot.className = 'dot green';
+        txt.style.color = 'var(--green)';
+    } else if (status === "STREAMING") {
+        dot.className = 'dot cyan';
+        txt.style.color = 'var(--cyan)';
+    } else {
+        dot.className = 'dot';
+        txt.style.color = 'var(--text-dim)';
     }
 }
 
@@ -809,3 +965,444 @@ document.getElementById('btn-test-api').addEventListener('click', () => {
 
 // ─── INIT FEED ───────────────────────────────────────────────
 updateLiveFeedSrc();
+
+// ─── MODE SWITCHING ──────────────────────────────────────────
+let currentMode = 1;
+
+function switchMode(mode) {
+    currentMode = mode;
+    const canvas = document.getElementById('canvas');
+    const mode2Panel = document.getElementById('mode2-panel');
+    const tab1 = document.getElementById('mode-tab-1');
+    const tab2 = document.getElementById('mode-tab-2');
+
+    if (mode === 2) {
+        canvas.style.display = 'none';
+        mode2Panel.classList.add('active');
+        tab1.classList.remove('active');
+        tab2.classList.add('active');
+        document.getElementById('sb-mode2').classList.add('active');
+        loadM2ConfigFromBackend();
+    } else {
+        canvas.style.display = '';
+        mode2Panel.classList.remove('active');
+        tab1.classList.add('active');
+        tab2.classList.remove('active');
+        document.getElementById('sb-mode2').classList.remove('active');
+    }
+}
+
+// Sidebar M2 button
+document.getElementById('sb-mode2').addEventListener('click', () => {
+    switchMode(currentMode === 2 ? 1 : 2);
+});
+
+// ─── MODE 2 INNER TABS ───────────────────────────────────────
+function switchM2Tab(tab) {
+    ['config', 'main'].forEach(t => {
+        document.getElementById('m2-tab-' + t).classList.toggle('active', t === tab);
+        document.getElementById('m2-section-' + t).classList.toggle('active', t === tab);
+    });
+}
+
+// ─── MODE 2 SOURCE MANAGEMENT ────────────────────────────────
+const M2_DIRS = ['North', 'South', 'East', 'West'];
+
+function applyM2Source(direction) {
+    const src = document.getElementById('m2-src-' + direction).value.trim();
+    const payload = {};
+    payload['src_' + direction.toLowerCase()] = src;
+
+    fetch('/api/mode2_config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    }).then(r => r.json()).then(data => {
+        if (data.status === 'success') {
+            toast(direction + ' source applied', 'green');
+            // Refresh stream src to trigger reload
+            refreshM2Stream(direction);
+            updateM2CardState(direction, !!src);
+        } else {
+            toast('Failed to apply ' + direction, 'red');
+        }
+    }).catch(() => toast('Network Error', 'red'));
+}
+
+function refreshM2Stream(direction) {
+    const ts = Date.now();
+    const prevImg = document.getElementById('m2-prev-' + direction);
+    const mainImg = document.getElementById('m2-main-' + direction);
+    const newSrc = `/video_feed/mode2/${direction}?t=${ts}`;
+    if (prevImg) prevImg.src = newSrc;
+    if (mainImg) mainImg.src = newSrc;
+
+    // Badge update
+    const badge = document.getElementById('m2-prev-badge-' + direction);
+    const src = document.getElementById('m2-src-' + direction)?.value?.trim();
+    if (badge) {
+        badge.textContent = src ? 'LIVE' : 'NO SOURCE';
+        badge.className = 'm2-prev-badge' + (src ? ' live' : '');
+    }
+}
+
+function updateM2CardState(direction, isConfigured) {
+    const card = document.getElementById('m2-card-' + direction);
+    if (card) card.classList.toggle('configured', isConfigured);
+}
+
+document.getElementById('m2-save-all').addEventListener('click', () => {
+    const payload = {};
+    let anyFilled = false;
+    M2_DIRS.forEach(d => {
+        const val = document.getElementById('m2-src-' + d)?.value?.trim() || '';
+        payload['src_' + d.toLowerCase()] = val;
+        if (val) anyFilled = true;
+    });
+
+    fetch('/api/mode2_config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    }).then(r => r.json()).then(data => {
+        toast('All sources saved', data.status === 'success' ? 'green' : 'red');
+        if (data.status === 'success') {
+            M2_DIRS.forEach(d => {
+                const src = payload['src_' + d.toLowerCase()];
+                refreshM2Stream(d);
+                updateM2CardState(d, !!src);
+            });
+        }
+    }).catch(() => toast('Network Error', 'red'));
+});
+
+function loadM2ConfigFromBackend() {
+    fetch('/api/mode2_config')
+        .then(r => r.json())
+        .then(data => {
+            if (!data.config) return;
+            M2_DIRS.forEach(d => {
+                const val = data.config[d] || '';
+                const inp = document.getElementById('m2-src-' + d);
+                if (inp) inp.value = val;
+                updateM2CardState(d, !!val);
+                const badge = document.getElementById('m2-prev-badge-' + d);
+                if (badge) {
+                    badge.textContent = val ? 'LIVE' : 'NO SOURCE';
+                    badge.className = 'm2-prev-badge' + (val ? ' live' : '');
+                }
+            });
+        })
+        .catch(() => { });
+}
+
+// ─── MODE 2 SIGNAL SYNC (reuses existing poll data) ──────────
+function updateMode2Visuals(data) {
+    if (currentMode !== 2) return;
+    const tlStates = data.tl_states || {};
+    const m2counts = data.mode2_counts || {};
+    const greenLane = data.green_lane;
+
+    M2_DIRS.forEach(lane => {
+        const state = tlStates[lane] || 'red';
+        const count = m2counts[lane] !== undefined ? m2counts[lane] : (data.counts || {})[lane] || 0;
+
+        // Traffic lights in mode 2
+        ['red', 'yellow', 'green'].forEach(s => {
+            const el = document.getElementById('m2-tl-' + s[0] + '-' + lane);
+            if (el) el.className = 'm2-tl-light' + (s === state ? ' lit-' + s : '');
+        });
+
+        // Vehicle count
+        const cntEl = document.getElementById('m2-cnt-' + lane);
+        if (cntEl) cntEl.textContent = count;
+
+        // Tile green-active highlight
+        const tile = document.getElementById('m2-tile-' + lane);
+        if (tile) tile.classList.toggle('green-active', lane === greenLane && state === 'green');
+    });
+
+    // Update Control Mode Button
+    const mode = data.control_mode || 1;
+    const btn = document.getElementById('m2-mode-toggle');
+    if (btn) {
+        if (mode === 2) {
+            btn.textContent = 'RUSH PRIORITY';
+            btn.classList.add('rush');
+        } else {
+            btn.textContent = 'FIXED CYCLE';
+            btn.classList.remove('rush');
+        }
+    }
+}
+
+window.toggleControlMode = function () {
+    const btn = document.getElementById('m2-mode-toggle');
+    const currentIsRush = btn ? btn.classList.contains('rush') : false;
+    const newMode = currentIsRush ? 1 : 2;
+
+    fetch('/api/control_mode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: newMode })
+    }).then(r => r.json()).then(data => {
+        toast('Control Mode: ' + (newMode === 2 ? 'RUSH PRIORITY' : 'FIXED CYCLE'), newMode === 2 ? 'amber' : 'cyan');
+    }).catch(() => toast('Mode Update Failed', 'red'));
+};
+
+window.switchM2ConfigDir = function (dir) {
+    const directions = ['North', 'West', 'South', 'East'];
+    directions.forEach(d => {
+        const tab = document.getElementById('m2-subtab-' + d);
+        const card = document.getElementById('m2-card-' + d);
+        if (tab) tab.classList.toggle('active', d === dir);
+        if (card) card.classList.toggle('active', d === dir);
+    });
+    console.log(`[MODE2] Configuration switched to: ${dir}`);
+};
+
+// Hook into existing pollStats
+const _origPollStats = pollStats;
+// Patch: extend updateDashboardStats to also call mode2
+const _origUpdateDash = updateDashboardStats;
+updateDashboardStats = function (data) {
+    _origUpdateDash(data);
+    updateMode2Visuals(data);
+};
+
+// Load M2 config at startup (non-blocking)
+loadM2ConfigFromBackend();
+
+// ─── MODE 2 ROI DRAWING ──────────────────────────────────────
+const m2RoiState = {};  // { direction: { points: [{x,y}], drawMode: bool, savedPts: [[x,y]] } }
+
+M2_DIRS.forEach(d => {
+    m2RoiState[d] = { points: [], drawMode: false, savedPts: null };
+});
+
+function _getM2Canvas(dir) {
+    return document.getElementById('m2-roi-canvas-' + dir);
+}
+
+function _syncM2CanvasSize(dir) {
+    const canvas = _getM2Canvas(dir);
+    if (!canvas) return;
+    const preview = canvas.closest('.m2-card-preview');
+    if (!preview) return;
+    canvas.width = preview.clientWidth;
+    canvas.height = preview.clientHeight;
+}
+
+function _drawM2ROI(dir) {
+    const canvas = _getM2Canvas(dir);
+    if (!canvas) return;
+    _syncM2CanvasSize(dir);
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const state = m2RoiState[dir];
+    const img = document.getElementById('m2-prev-' + dir);
+    const rect = getContainedImageBounds(img);
+
+    // Draw saved ROI (always shown when in draw mode so user sees existing)
+    if (state.savedPts && state.savedPts.length >= 3 && rect) {
+        const sx = rect.w / (img.naturalWidth || 1);
+        const sy = rect.h / (img.naturalHeight || 1);
+
+        ctx.beginPath();
+        ctx.moveTo(rect.x + state.savedPts[0][0] * sx, rect.y + state.savedPts[0][1] * sy);
+        state.savedPts.forEach(p => {
+            ctx.lineTo(rect.x + p[0] * sx, rect.y + p[1] * sy);
+        });
+        ctx.closePath();
+        ctx.strokeStyle = 'rgba(0,232,122,0.75)';
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(0,232,122,0.15)';
+        ctx.fill();
+    }
+
+    // Draw in-progress points
+    const pts = state.points;
+    pts.forEach((pt, i) => {
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, 5, 0, Math.PI * 2);
+        ctx.fillStyle = '#f5c400';
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        ctx.fillStyle = '#fff';
+        ctx.font = '10px "Share Tech Mono"';
+        ctx.fillText(i + 1, pt.x + 8, pt.y + 9);
+    });
+
+    if (pts.length > 1) {
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y);
+        pts.forEach(p => ctx.lineTo(p.x, p.y));
+        if (pts.length === 4) ctx.closePath();
+        ctx.strokeStyle = '#f5c400';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+    }
+
+    // Status text
+    const statusEl = document.getElementById('m2-roi-status-' + dir);
+    if (statusEl) {
+        if (pts.length > 0) {
+            const rem = 4 - pts.length;
+            statusEl.textContent = rem > 0 ? rem + ' MORE POINT(S)' : 'READY — SAVE ROI';
+            statusEl.style.color = rem > 0 ? 'var(--yellow)' : 'var(--green)';
+        } else if (state.savedPts) {
+            statusEl.textContent = 'ROI ACTIVE';
+            statusEl.style.color = 'var(--green)';
+        } else {
+            statusEl.textContent = 'NO ROI SET';
+            statusEl.style.color = 'var(--text-dim)';
+        }
+    }
+}
+
+function toggleM2ROIDraw(dir) {
+    const state = m2RoiState[dir];
+    state.drawMode = !state.drawMode;
+    state.points = [];  // reset in-progress on toggle
+
+    const canvas = _getM2Canvas(dir);
+    const btn = document.getElementById('m2-roi-draw-' + dir);
+    if (!canvas) return;
+
+    if (state.drawMode) {
+        _syncM2CanvasSize(dir);
+        canvas.classList.add('drawing');
+        if (btn) btn.classList.add('active');
+        _drawM2ROI(dir);
+        toast(dir + ': Click 4 points on preview to draw ROI', 'yellow');
+    } else {
+        canvas.classList.remove('drawing');
+        if (btn) btn.classList.remove('active');
+    }
+}
+
+function clearM2ROI(dir) {
+    const state = m2RoiState[dir];
+    state.points = [];
+    state.savedPts = null;
+
+    const canvas = _getM2Canvas(dir);
+    if (canvas) {
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    const statusEl = document.getElementById('m2-roi-status-' + dir);
+    if (statusEl) { statusEl.textContent = 'NO ROI SET'; statusEl.style.color = 'var(--text-dim)'; }
+
+    // Clear on backend too
+    fetch('/api/mode2_rois', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lane: dir, points: [] })
+    }).then(r => r.json()).then(() => toast(dir + ' ROI cleared', 'yellow'))
+        .catch(() => toast('Network Error', 'red'));
+}
+
+function saveM2ROI(dir) {
+    const state = m2RoiState[dir];
+    if (state.points.length !== 4) {
+        toast('Need exactly 4 points for ' + dir + ' ROI', 'red');
+        return;
+    }
+
+    const canvas = _getM2Canvas(dir);
+    const preview = canvas ? canvas.closest('.m2-card-preview') : null;
+    const img = document.getElementById('m2-prev-' + dir);
+
+    // Scale from display point (relative to whole canvas) to natural image pixels
+    const rect = getContainedImageBounds(img);
+    if (!rect) {
+        toast('Preview not ready', 'red');
+        return;
+    }
+
+    const pts = state.points.map(p => [
+        Math.round((p.x - rect.x) * (img.naturalWidth / rect.w)),
+        Math.round((p.y - rect.y) * (img.naturalHeight / rect.h))
+    ]);
+
+    // Keep natural-space copy for rendering
+    state.savedPts = pts;
+    state.points = [];
+    state.drawMode = false;
+
+    const cvs = _getM2Canvas(dir);
+    const btn = document.getElementById('m2-roi-draw-' + dir);
+    if (cvs) cvs.classList.remove('drawing');
+    if (btn) btn.classList.remove('active');
+    _drawM2ROI(dir);
+
+    fetch('/api/mode2_rois', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lane: dir, points: pts })
+    }).then(r => r.json()).then(data => {
+        toast(data.message || (dir + ' ROI saved'), data.status === 'success' ? 'green' : 'red');
+    }).catch(() => toast('Network Error', 'red'));
+}
+
+// Wire canvas click events
+M2_DIRS.forEach(dir => {
+    const canvas = _getM2Canvas(dir);
+    if (!canvas) return;
+    canvas.addEventListener('mousedown', e => {
+        const state = m2RoiState[dir];
+        if (!state.drawMode || state.points.length >= 4) return;
+        const rect = canvas.getBoundingClientRect();
+        state.points.push({ x: Math.round(e.clientX - rect.left), y: Math.round(e.clientY - rect.top) });
+        _drawM2ROI(dir);
+    });
+});
+
+// Load saved ROIs from backend and render
+function loadM2ROIsFromBackend() {
+    fetch('/api/mode2_rois')
+        .then(r => r.json())
+        .then(data => {
+            if (!data.rois) return;
+            M2_DIRS.forEach(dir => {
+                const pts = data.rois[dir];
+                if (pts && pts.length >= 3) {
+                    const state = m2RoiState[dir];
+                    const canvas = _getM2Canvas(dir);
+                    const preview = canvas ? canvas.closest('.m2-card-preview') : null;
+                    const img = document.getElementById('m2-prev-' + dir);
+
+                    // Convert natural coords back to display-space
+                    state.savedPts = pts; // We store national coords now to handle resizing correctly
+
+                    const statusEl = document.getElementById('m2-roi-status-' + dir);
+                    if (statusEl) { statusEl.textContent = 'ROI ACTIVE'; statusEl.style.color = 'var(--green)'; }
+
+                    // Show on canvas (needs to be visible)
+                    if (canvas) {
+                        _syncM2CanvasSize(dir);
+                        canvas.classList.add('drawing');
+                        _drawM2ROI(dir);
+                        // Keep canvas visible to show roi overlay permanently
+                    }
+                }
+            });
+        })
+        .catch(() => { });
+}
+
+// Load ROIs when entering Mode 2
+const _origSwitchMode = switchMode;
+switchMode = function (mode) {
+    _origSwitchMode(mode);
+    if (mode === 2) {
+        setTimeout(loadM2ROIsFromBackend, 300);
+    }
+};
+
