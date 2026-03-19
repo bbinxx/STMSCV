@@ -57,7 +57,7 @@ def process_frame(frame, model, rois):
     # Run YOLO inference
     if model is not None:
         # make sure the model has a dedicated lock to avoid issues when predict() is
-        # called from multiple threads (e.g. CARLA camera + mode2 threads)
+        # called from multiple threads (e.g. live camera + mode2 threads)
         import threading
         if not hasattr(model, _YOLO_LOCK_ATTR):
             setattr(model, _YOLO_LOCK_ATTR, threading.Lock())
@@ -186,15 +186,16 @@ automation_state = {
     "control_mode": 1 # 1: Fixed Cycle, 2: Intensity Based
 }
 
-def control_traffic_lights_logic(world, counts, tl_ids, cycle_timer=30.0, lane_scores=None):
-    """Consolidated controller logic with Mode (Fixed vs Intensity) support"""
+def control_traffic_lights_logic(control_url, counts, tl_ids, cycle_timer=30.0, lane_scores=None):
+    """Consolidated controller logic with Mode (Fixed vs Intensity) support using HTTP API"""
     global automation_state
     
     import time
-    try:
-        import carla
-    except ImportError:
-        # running without CARLA; nothing to control
+    import requests
+    import threading
+
+    if control_url is None:
+        # running without TRAFFIC_API configured
         return
 
     if lane_scores is None:
@@ -279,27 +280,37 @@ def control_traffic_lights_logic(world, counts, tl_ids, cycle_timer=30.0, lane_s
             automation_state["yellow_trigger_lane"] = next_lane
             automation_state["last_switch_time"] = current_time
 
-    # 3. Apply to CARLA Actors
+    # 3. Apply via HTTP API to TRAFFIC_API
     if not any(tl_ids.values()):
         return
 
+    updates = []
     for lane_name, tid in tl_ids.items():
-        if tid is None:
+        if tid is None or not str(tid).strip():
             continue
         try:
-            tl = world.get_actor(int(tid))
-            if tl is None:
-                continue
-
+            tid_int = int(tid)
             if automation_state["is_yellow_phase"] and lane_name == automation_state["current_green_lane"]:
-                tl.set_state(carla.TrafficLightState.Yellow)
+                updates.append({"id": tid_int, "state": "Yellow", "freeze": True})
             elif lane_name == automation_state["current_green_lane"]:
-                tl.set_state(carla.TrafficLightState.Green)
+                updates.append({"id": tid_int, "state": "Green", "freeze": True})
             else:
-                tl.set_state(carla.TrafficLightState.Red)
-        except Exception:
-            # Actor might have been destroyed or ID invalid
+                updates.append({"id": tid_int, "state": "Red", "freeze": True})
+        except ValueError:
             pass
+
+    if updates:
+        def send_request():
+            try:
+                endpoint = f"{control_url.rstrip('/')}/traffic_light/set_multiple"
+                requests.post(endpoint, json={"updates": updates}, timeout=2.0)
+            except Exception as e:
+                # Silently ignore connection errors so we don't spam the console if API is down
+                pass
+        
+        # Run in thread so vision loop doesn't block if API is slow
+        t = threading.Thread(target=send_request, daemon=True)
+        t.start()
 
 def get_automation_data():
     return automation_state

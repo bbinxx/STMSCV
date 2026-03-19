@@ -14,18 +14,18 @@ const DEFAULT_STATE = {
         'win-roi': { x: 100, y: 80, w: 560, h: 440, open: false, pinned: false },
         'win-tl': { x: 480, y: 80, w: 360, h: 500, open: false, pinned: false },
         'win-live': { x: 200, y: 200, w: 500, h: 360, open: false, pinned: false },
-        'win-log': { x: 80, y: 300, w: 440, h: 320, open: false, pinned: false },
-        'win-api': { x: 600, y: 60, w: 380, h: 420, open: false, pinned: false },
     },
     config: {
-        carlaHost: '',
-        carlaPort: '',
+        controllerHost: '',
+        controllerPort: '',
         timeout: '',
         yolo: '',
         cycleTimer: 30,
         flaskHost: '0.0.0.0',
-        flaskPort: 5050
+        flaskPort: 5050,
+        mode2Links: ''
     },
+
     tlIds: { North: '', South: '', East: '', West: '' },
     rois: {},
     logEntries: []
@@ -63,8 +63,8 @@ function applyFontSize(val) {
     saveState();
 }
 
-document.getElementById('fs-dec').addEventListener('click', () => applyFontSize(appState.fsBase - 1));
-document.getElementById('fs-inc').addEventListener('click', () => applyFontSize(appState.fsBase + 1));
+document.getElementById('fs-dec')?.addEventListener('click', () => applyFontSize(appState.fsBase - 1));
+document.getElementById('fs-inc')?.addEventListener('click', () => applyFontSize(appState.fsBase + 1));
 applyFontSize(appState.fsBase);
 
 // ─── CLOCK ───────────────────────────────────────────────────
@@ -109,6 +109,7 @@ function addLog(level, msg) {
 
 function renderLog() {
     const tbody = document.getElementById('log-tbody');
+    if (!tbody) return;
     if (!appState.logEntries.length) {
         tbody.innerHTML = '<tr><td colspan="3" style="color:var(--text-dim); text-align:center; padding:16px;">-- NO EVENTS --</td></tr>';
         return;
@@ -122,12 +123,15 @@ function renderLog() {
     </tr>`).join('');
 }
 
-document.getElementById('log-clear-btn').addEventListener('click', () => {
-    appState.logEntries = [];
-    renderLog();
-    saveState();
-    toast('Event log cleared', 'yellow');
-});
+const logClearBtn = document.getElementById('log-clear-btn');
+if (logClearBtn) {
+    logClearBtn.addEventListener('click', () => {
+        appState.logEntries = [];
+        renderLog();
+        saveState();
+        toast('Event log cleared', 'yellow');
+    });
+}
 
 renderLog();
 
@@ -196,7 +200,7 @@ function initDraggable(el) {
     const titlebar = el.querySelector('.fwin-titlebar');
     let dragging = false, ox = 0, oy = 0;
 
-    titlebar.addEventListener('mousedown', (e) => {
+    titlebar?.addEventListener('mousedown', (e) => {
         if (e.target.classList.contains('fwin-btn')) return;
         const s = appState.windows[winId];
         if (s.pinned) return;
@@ -230,7 +234,7 @@ function initResizable(el) {
     if (!handle) return;
     let resizing = false, ox = 0, oy = 0, ow = 0, oh = 0;
 
-    handle.addEventListener('mousedown', (e) => {
+    handle?.addEventListener('mousedown', (e) => {
         e.stopPropagation();
         const s = appState.windows[winId];
         resizing = true;
@@ -259,8 +263,8 @@ function initResizable(el) {
 // Close and pin buttons
 function initWindowControls(el) {
     const winId = el.id;
-    el.querySelector('.close-btn').addEventListener('click', () => closeWindow(winId));
-    el.querySelector('.pin-btn').addEventListener('click', () => {
+    el.querySelector('.close-btn')?.addEventListener('click', () => closeWindow(winId));
+    el.querySelector('.pin-btn')?.addEventListener('click', () => {
         const s = appState.windows[winId];
         s.pinned = !s.pinned;
         el.classList.toggle('pinned', s.pinned);
@@ -269,7 +273,7 @@ function initWindowControls(el) {
         saveState();
     });
 
-    el.addEventListener('mousedown', () => bringToFront(winId));
+    el?.addEventListener('mousedown', () => bringToFront(winId));
 }
 
 // Initialize all windows
@@ -287,10 +291,7 @@ const SB_MAP = {
     'sb-dash': 'win-dashboard',
     'sb-conn': 'win-connection',
     'sb-roi': 'win-roi',
-    'sb-tl': 'win-tl',
-    'sb-live': 'win-live',
-    'sb-log': 'win-log',
-    'sb-api': 'win-api'
+    'sb-tl': 'win-tl'
 };
 
 function updateSidebarBtns() {
@@ -310,25 +311,29 @@ updateSidebarBtns();
 // ─── CONFIG FORM ─────────────────────────────────────────────
 function loadConfigToForm() {
     const c = appState.config;
-    document.getElementById('cfg-carla-host').value = c.carlaHost || '';
-    document.getElementById('cfg-carla-port').value = c.carlaPort || '';
+    document.getElementById('cfg-controller-host').value = c.controllerHost || '';
+    document.getElementById('cfg-controller-port').value = c.controllerPort || '';
     document.getElementById('cfg-timeout').value = c.timeout || '';
     document.getElementById('cfg-yolo').value = c.yolo || '';
     document.getElementById('cfg-cycle-timer').value = c.cycleTimer || 30;
-    document.getElementById('cfg-live-url').value = c.liveFeedUrl || '';
+    const liveUrlEl = document.getElementById('cfg-live-url');
+    if (liveUrlEl) liveUrlEl.value = c.liveFeedUrl || '';
+    const mode2LinksEl = document.getElementById('cfg-mode2-links');
+    if (mode2LinksEl) mode2LinksEl.value = c.mode2Links || '';
     document.getElementById('cfg-flask-host').value = c.flaskHost || '0.0.0.0';
     document.getElementById('cfg-flask-port').value = c.flaskPort || 5050;
+    loadMode2SourcesToInputs();
     updateTopbarFromConfig();
     updateApiEndpoints();
 }
 
 function saveConfigFromForm() {
-    appState.config.carlaHost = document.getElementById('cfg-carla-host').value.trim();
-    appState.config.carlaPort = document.getElementById('cfg-carla-port').value;
+    appState.config.controllerHost = document.getElementById('cfg-controller-host').value.trim();
+    appState.config.controllerPort = document.getElementById('cfg-controller-port').value;
     appState.config.timeout = document.getElementById('cfg-timeout').value;
     appState.config.yolo = document.getElementById('cfg-yolo').value.trim();
     appState.config.cycleTimer = document.getElementById('cfg-cycle-timer').value || 30;
-    appState.config.liveFeedUrl = document.getElementById('cfg-live-url').value.trim();
+    appState.config.mode2Links = document.getElementById('cfg-mode2-links') ? document.getElementById('cfg-mode2-links').value.trim() : '';
     appState.config.flaskHost = document.getElementById('cfg-flask-host').value.trim() || '0.0.0.0';
     appState.config.flaskPort = document.getElementById('cfg-flask-port').value || 5050;
     saveState();
@@ -338,14 +343,72 @@ function saveConfigFromForm() {
 
 function updateTopbarFromConfig() {
     const c = appState.config;
-    document.getElementById('tb-host').textContent = (c.carlaHost || '--') + ':' + (c.carlaPort || '--');
+    document.getElementById('tb-host').textContent = (c.controllerHost || '--') + ':' + (c.controllerPort || '--');
 }
 
 function updateApiEndpoints() {
     const base = window.location.origin;
-    document.getElementById('api-ep-feed').textContent = base + '/api/live_feed';
-    document.getElementById('api-ep-counts').textContent = base + '/api/lane_counts';
-    document.getElementById('api-ep-cam').textContent = base + '/api/camera/status';
+    const elFeed = document.getElementById('api-ep-feed');
+    const elCounts = document.getElementById('api-ep-counts');
+    const elCam = document.getElementById('api-ep-cam');
+    if (elFeed) elFeed.textContent = base + '/api/live_feed';
+    if (elCounts) elCounts.textContent = base + '/api/lane_counts';
+    if (elCam) elCam.textContent = base + '/api/camera/status';
+}
+
+function parseMode2Links(text) {
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    const mapping = { North: '', South: '', East: '', West: '' };
+    const order = ['North', 'South', 'East', 'West'];
+    let idx = 0;
+    lines.forEach(line => {
+        const lc = line.trim();
+        if (!lc) return;
+        const colon = lc.indexOf(':');
+        const eq = lc.indexOf('=');
+        let key, url;
+        if (colon > 0 || eq > 0) {
+            const splitAt = colon > 0 ? colon : eq;
+            key = lc.slice(0, splitAt).trim();
+            url = lc.slice(splitAt + 1).trim();
+        } else {
+            key = '';
+            url = lc;
+        }
+        if (!url) return;
+        if (/^north$/i.test(key)) mapping.North = url;
+        else if (/^south$/i.test(key)) mapping.South = url;
+        else if (/^east$/i.test(key)) mapping.East = url;
+        else if (/^west$/i.test(key)) mapping.West = url;
+        else if (/^https?:\/\//i.test(url) || /^rtsp:/i.test(url) || /^\d+$/.test(url)) {
+            if (idx < order.length) {
+                mapping[order[idx]] = url;
+                idx += 1;
+            }
+        }
+    });
+    return mapping;
+}
+
+function applyMode2Links() {
+    const txt = document.getElementById('cfg-mode2-links');
+    if (!txt) return;
+    const mapping = parseMode2Links(txt.value);
+    appState.mode2Sources = mapping;
+    ['North', 'South', 'East', 'West'].forEach(lane => {
+        const inpt = document.getElementById('mode2-' + lane.toLowerCase());
+        if (inpt) inpt.value = mapping[lane];
+    });
+    saveState();
+    toast('Mode2 links mapped', 'green');
+}
+
+function loadMode2SourcesToInputs() {
+    const mapping = appState.mode2Sources || { North: '', South: '', East: '', West: '' };
+    ['North', 'South', 'East', 'West'].forEach(lane => {
+        const inpt = document.getElementById('mode2-' + lane.toLowerCase());
+        if (inpt) inpt.value = mapping[lane] || '';
+    });
 }
 
 function updateLiveFeedSrc() {
@@ -366,9 +429,9 @@ function handleConnectionCommand(actionName) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             action: actionName,
-            carla_host: appState.config.carlaHost,
-            carla_port: appState.config.carlaPort,
-            carla_timeout: appState.config.timeout,
+            controller_host: appState.config.controllerHost,
+            controller_port: appState.config.controllerPort,
+            controller_timeout: appState.config.timeout,
             yolo_model: appState.config.yolo,
             cycle_timer: appState.config.cycleTimer,
             live_feed_url: appState.config.liveFeedUrl,
@@ -387,8 +450,23 @@ function handleConnectionCommand(actionName) {
     });
 }
 
-document.getElementById('btn-save-only').addEventListener('click', () => handleConnectionCommand('save_only'));
-document.getElementById('btn-toggle-connect').addEventListener('click', () => handleConnectionCommand('toggle_connect'));
+document.getElementById('btn-save-only')?.addEventListener('click', () => handleConnectionCommand('save_only'));
+document.getElementById('btn-toggle-connect')?.addEventListener('click', () => handleConnectionCommand('toggle_connect'));
+const startBtn = document.getElementById('btn-start-system');
+const stopBtn = document.getElementById('btn-stop-system');
+if (startBtn) {
+    startBtn.addEventListener('click', () => handleConnectionCommand('start_system'));
+}
+if (stopBtn) {
+    stopBtn.addEventListener('click', () => handleConnectionCommand('stop_system'));
+}
+const mode2ApplyBtn = document.getElementById('btn-apply-mode2-links');
+if (mode2ApplyBtn) {
+    mode2ApplyBtn.addEventListener('click', () => {
+        applyMode2Links();
+        saveConfigFromForm();
+    });
+}
 
 loadConfigToForm();
 
@@ -397,9 +475,9 @@ function loadExternalConfig() {
     fetch('/api/config')
         .then(r => r.json())
         .then(data => {
-            appState.config.carlaHost = data.carla_host || '';
-            appState.config.carlaPort = data.carla_port || '';
-            appState.config.timeout = data.carla_timeout || '';
+            appState.config.controllerHost = data.controller_host || data.control_host || data.thorulf_host || '';
+            appState.config.controllerPort = data.controller_port || data.control_port || data.thorulf_port || '';
+            appState.config.timeout = data.controller_timeout || data.control_timeout || data.thorulf_timeout || '';
             appState.config.yolo = data.yolo_model || '';
             appState.config.cycleTimer = data.cycle_timer || 30;
             appState.config.flaskHost = data.flask_host || '0.0.0.0';
@@ -420,7 +498,7 @@ function loadTLForm() {
     });
 }
 
-document.getElementById('btn-update-tl').addEventListener('click', () => {
+document.getElementById('btn-update-tl')?.addEventListener('click', () => {
     ['North', 'South', 'East', 'West'].forEach(lane => {
         const el = document.getElementById('tl-' + lane.toLowerCase());
         appState.tlIds[lane] = el ? el.value.trim() : '';
@@ -592,14 +670,14 @@ if (roiCanvas) {
     });
 }
 
-document.getElementById('roi-clear-btn').addEventListener('click', () => {
+document.getElementById('roi-clear-btn')?.addEventListener('click', () => {
     roiPoints = [];
     drawROIScene();
     const s = document.getElementById('roi-status');
     if (s) s.textContent = 'POINTS CLEARED -- CLICK 4 POINTS';
 });
 
-document.getElementById('roi-save-btn').addEventListener('click', () => {
+document.getElementById('roi-save-btn')?.addEventListener('click', () => {
     if (roiPoints.length !== 4) {
         toast('Exactly 4 points required', 'red');
         return;
@@ -632,7 +710,7 @@ document.getElementById('roi-save-btn').addEventListener('click', () => {
     });
 });
 
-document.getElementById('roi-save-set-btn').addEventListener('click', () => {
+document.getElementById('roi-save-set-btn')?.addEventListener('click', () => {
     const name = document.getElementById('roi-set-name').value.trim();
     if (!name) { toast("Enter a set name", "red"); return; }
 
@@ -656,6 +734,7 @@ function refreshRoiSetsList() {
         .then(r => r.json())
         .then(data => {
             const list = document.getElementById('roi-sets-list');
+            if (!list) return; // Prevent error if component is removed
             list.innerHTML = '';
             if (!data.sets || data.sets.length === 0) {
                 list.innerHTML = '<span class="form-hint">No saved sets...</span>';
@@ -675,7 +754,7 @@ function refreshRoiSetsList() {
         });
 }
 
-document.getElementById('roi-load-btn').addEventListener('click', () => {
+document.getElementById('roi-load-btn')?.addEventListener('click', () => {
     const name = document.getElementById('roi-set-title') || document.getElementById('roi-set-name').value;
     if (!name) return;
     fetch(`/api/roi_sets/${name}`)
@@ -693,7 +772,7 @@ document.getElementById('roi-load-btn').addEventListener('click', () => {
 });
 
 // ─── TRAFFIC LIGHTS ──────────────────────────────────────────
-document.getElementById('btn-update-tl').addEventListener('click', () => {
+document.getElementById('btn-update-tl')?.addEventListener('click', () => {
     const data = {
         tl_north: document.getElementById('tl-north').value,
         tl_south: document.getElementById('tl-south').value,
@@ -815,13 +894,19 @@ function updatePhaseVisuals(data) {
     if (isConn && greenLane) {
         let cycleDuration = data.cycle_duration || 30;
         let pct = (phTimer / cycleDuration) * 100;
-        document.getElementById('ph-bar').style.width = pct + '%';
-        document.getElementById('ph-timer').textContent = phTimer + 's';
-        document.getElementById('ph-lane').textContent = greenLane.toUpperCase();
+        const phBar = document.getElementById('ph-bar');
+        const phTimerEl = document.getElementById('ph-timer');
+        const phLaneEl = document.getElementById('ph-lane');
+        if (phBar) phBar.style.width = pct + '%';
+        if (phTimerEl) phTimerEl.textContent = phTimer + 's';
+        if (phLaneEl) phLaneEl.textContent = greenLane.toUpperCase();
     } else {
-        document.getElementById('ph-bar').style.width = '0%';
-        document.getElementById('ph-timer').textContent = '--s';
-        document.getElementById('ph-lane').textContent = '--';
+        const phBar = document.getElementById('ph-bar');
+        const phTimerEl = document.getElementById('ph-timer');
+        const phLaneEl = document.getElementById('ph-lane');
+        if (phBar) phBar.style.width = '0%';
+        if (phTimerEl) phTimerEl.textContent = '--s';
+        if (phLaneEl) phLaneEl.textContent = '--';
     }
 
     // Update Topbar
@@ -864,22 +949,22 @@ function pollStats() {
             lastFeedStatus = data.feed_status;
 
             updateDashboardStats(data);
-            setCarlaStatus(data.connection);
+            setApiStatus(data.connection);
             setDetectionStatus(data.detect_status);
             setFeedStatus(data.feed_status);
         })
         .catch(() => {
             lastBackendStatus = false;
-            setCarlaStatus("Disconnected");
+            setApiStatus("Disconnected");
             // Clear stats on network error
             updateDashboardStats({ connection: "Disconnected" });
         });
 }
 
-function setCarlaStatus(statusString) {
-    const dot = document.getElementById('dot-carla');
-    const txt = document.getElementById('stat-carla');
-    const tbEl = document.getElementById('tb-carla-status');
+function setApiStatus(statusString) {
+    const dot = document.getElementById('dot-control');
+    const txt = document.getElementById('stat-control');
+    const tbEl = document.getElementById('tb-control-status');
     const connBtn = document.getElementById('sb-conn');
     const toggleBtn = document.getElementById('btn-toggle-connect');
 
@@ -947,55 +1032,81 @@ setInterval(pollStats, 1000);
 pollStats();
 
 // ─── API TEST BUTTON ─────────────────────────────────────────
-document.getElementById('btn-test-api').addEventListener('click', () => {
-    const c = appState.config;
-    const url = 'http://' + (c.flaskHost === '0.0.0.0' ? 'localhost' : c.flaskHost) + ':' + c.flaskPort + '/api/lane_counts';
-    toast('Testing: ' + url, 'cyan');
-    fetch(url)
-        .then(r => r.json())
-        .then(data => {
-            toast('API OK -- ' + JSON.stringify(data).slice(0, 60), 'green');
-            addLog('OK', 'API test passed: ' + url);
-        })
-        .catch(err => {
-            toast('API UNREACHABLE', 'red');
-            addLog('ERR', 'API test failed: ' + url);
-        });
-});
+const testApiBtn = document.getElementById('btn-test-api');
+if (testApiBtn) {
+    testApiBtn.addEventListener('click', () => {
+        const c = appState.config;
+        const url = 'http://' + (c.flaskHost === '0.0.0.0' ? 'localhost' : c.flaskHost) + ':' + c.flaskPort + '/api/lane_counts';
+        toast('Testing: ' + url, 'cyan');
+        fetch(url)
+            .then(r => r.json())
+            .then(data => {
+                toast('API OK -- ' + JSON.stringify(data).slice(0, 60), 'green');
+                addLog('OK', 'API test passed: ' + url);
+            })
+            .catch(err => {
+                toast('API UNREACHABLE', 'red');
+                addLog('ERR', 'API test failed: ' + url);
+            });
+    });
+}
+
+const testFeedBtn = document.getElementById('btn-test-feed');
+if (testFeedBtn) {
+    testFeedBtn.addEventListener('click', () => {
+        toast('Testing live feed status...', 'cyan');
+        fetch('/api/camera/status')
+            .then(r => r.json())
+            .then(data => {
+                const msg = 'Feed ' + (data.status || 'inactive').toUpperCase();
+                toast(msg, data.status === 'online' ? 'green' : 'red');
+                addLog('OK', msg);
+                setFeedStatus(data.status || 'NO SIGNAL');
+            }).catch(() => {
+                toast('Feed test failed', 'red');
+                addLog('ERR', 'Feed test failed');
+                setFeedStatus('NO SIGNAL');
+            });
+    });
+}
 
 // ─── INIT FEED ───────────────────────────────────────────────
 updateLiveFeedSrc();
 
-// ─── MODE SWITCHING ──────────────────────────────────────────
-let currentMode = 1;
+// Start in Mode 2 by default
+let currentMode = 2;
+let mode2Active = true;
 
-function switchMode(mode) {
-    currentMode = mode;
+// ─── MODE SWITCHING ──────────────────────────────────────────
+
+function setMode2State(active) {
+    mode2Active = active;
     const canvas = document.getElementById('canvas');
     const mode2Panel = document.getElementById('mode2-panel');
-    const tab1 = document.getElementById('mode-tab-1');
-    const tab2 = document.getElementById('mode-tab-2');
-
-    if (mode === 2) {
-        canvas.style.display = 'none';
-        mode2Panel.classList.add('active');
-        tab1.classList.remove('active');
-        tab2.classList.add('active');
-        document.getElementById('sb-mode2').classList.add('active');
-        loadM2ConfigFromBackend();
+    
+    if (canvas) canvas.style.display = ''; // Keep canvas visible for connection window
+    
+    const sbM2 = document.getElementById('sb-mode2');
+    if (active) {
+        if (mode2Panel) mode2Panel.classList.add('active');
+        if (sbM2) sbM2.classList.add('active');
+        try { loadM2ConfigFromBackend(); } catch (e) {}
     } else {
-        canvas.style.display = '';
-        mode2Panel.classList.remove('active');
-        tab1.classList.add('active');
-        tab2.classList.remove('active');
-        document.getElementById('sb-mode2').classList.remove('active');
+        if (mode2Panel) mode2Panel.classList.remove('active');
+        if (sbM2) sbM2.classList.remove('active');
     }
 }
 
-// Sidebar M2 button
-document.getElementById('sb-mode2').addEventListener('click', () => {
-    switchMode(currentMode === 2 ? 1 : 2);
-});
+// Ensure Mode 2 is active on boot
+setMode2State(true);
+
+// Sidebar M2 button - setup toggle
+const sbM2Btn = document.getElementById('sb-mode2');
+if (sbM2Btn) {
+    sbM2Btn.addEventListener('click', () => {
+        setMode2State(!mode2Active);
+    });
+}
 
 // ─── MODE 2 INNER TABS ───────────────────────────────────────
 function switchM2Tab(tab) {
@@ -1051,7 +1162,7 @@ function updateM2CardState(direction, isConfigured) {
     if (card) card.classList.toggle('configured', isConfigured);
 }
 
-document.getElementById('m2-save-all').addEventListener('click', () => {
+document.getElementById('m2-save-all')?.addEventListener('click', () => {
     const payload = {};
     let anyFilled = false;
     M2_DIRS.forEach(d => {
@@ -1397,12 +1508,5 @@ function loadM2ROIsFromBackend() {
         .catch(() => { });
 }
 
-// Load ROIs when entering Mode 2
-const _origSwitchMode = switchMode;
-switchMode = function (mode) {
-    _origSwitchMode(mode);
-    if (mode === 2) {
-        setTimeout(loadM2ROIsFromBackend, 300);
-    }
-};
-
+// Load ROIs when the dashboard initializes
+setTimeout(loadM2ROIsFromBackend, 300);

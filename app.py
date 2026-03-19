@@ -1,9 +1,5 @@
-try:
-    import carla
-except ImportError:
-    carla = None
-    print("[WARN] carla module not available; CARLA integration disabled", flush=True)
 import cv2
+import requests
 import numpy as np
 import threading
 import queue
@@ -51,9 +47,9 @@ def load_config():
     conn.close()
     
     config_data = {
-        "carla_host": "",
-        "carla_port": "",
-        "carla_timeout": "",
+        "controller_host": "",
+        "controller_port": "",
+        "controller_timeout": "",
         "yolo_model": "",
         "flask_host": "0.0.0.0",
         "flask_port": 5050,
@@ -61,11 +57,26 @@ def load_config():
         "cycle_timer": 30
     }
     for k, v in rows:
+        # Keep backward compatibility with old names while normalizing to controller_* keys.
         try:
-            if k in ["carla_port", "flask_port", "cycle_timer"] and v is not None and str(v).strip():
+            if k in ["controller_port", "thorulf_port", "control_port", "flask_port", "cycle_timer"] and v is not None and str(v).strip():
                 config_data[k] = int(v)
-            elif k == "carla_timeout" and v is not None and str(v).strip():
-                config_data[k] = float(v)
+            elif k in ["controller_timeout", "thorulf_timeout", "control_timeout"] and v is not None and str(v).strip():
+                config_data["controller_timeout"] = float(v)
+            elif k in ["controller_host", "thorulf_host", "control_host"]:
+                config_data["controller_host"] = v
+            elif k == "controller_port" or k == "thorulf_port" or k == "control_port":
+                if v is not None and str(v).strip():
+                    try:
+                        config_data["controller_port"] = int(v)
+                    except ValueError:
+                        pass
+            elif k == "controller_timeout" or k == "thorulf_timeout" or k == "control_timeout":
+                if v is not None and str(v).strip():
+                    try:
+                        config_data["controller_timeout"] = float(v)
+                    except ValueError:
+                        pass
             else:
                 config_data[k] = v
         except (ValueError, TypeError):
@@ -149,7 +160,7 @@ load_yolo_model(config.get("yolo_model", ""))
 # the loop first runs.  doing it here before _start_external_feed is defined would
 # raise a NameError if the URL had been saved earlier.
 
-# Thread-safe queue for CARLA camera images (and optionally external feed)
+# Thread-safe queue for CONTROL camera images (and optionally external feed)
 image_queue = queue.Queue(maxsize=1)
 
 # External feed support (config.live_feed_url)
@@ -167,9 +178,22 @@ cv2.putText(_blank_img, "SIGNAL STANDBY", (210, 180), cv2.FONT_HERSHEY_SIMPLEX, 
 _, _blank_jpeg = cv2.imencode('.jpg', _blank_img)
 BLANK_FRAME_BYTES = _blank_jpeg.tobytes()
 
-global_world = None
-global_camera = None
 connection_status = "Disconnected"
+system_started = False
+
+# Checks for required runtime configuration before starting
+
+def check_start_prereqs():
+    missing = []
+    if not config.get('controller_host'):
+        missing.append('controller_host')
+    if not config.get('controller_port'):
+        missing.append('controller_port')
+    if not config.get('yolo_model'):
+        missing.append('yolo_model')
+    if config.get('yolo_model') and model is None:
+        missing.append('yolo_model not loaded')
+    return missing
 
 # Global automation state now handled by detection module
 
@@ -429,115 +453,48 @@ ROIS = load_rois()
 TL_IDS = load_tls()
 ROI_ENABLED = True
 
-# --- 1. NATIVE CARLA VIDEO INPUT ---
-def carla_sensor_callback(image):
-    """Callback triggered every time the CARLA camera generates a new image.
-    If an external `live_feed_url` is configured, we ignore the CARLA stream so
-    that the queue is not polluted with unwanted frames.
-    """
-    try:
-        # if a user has configured an API/URL feed, prefer that source
-        if config.get("live_feed_url", "").strip():
-            return
-        if not image or not image.raw_data:
-            return
-        array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
-        array = np.reshape(array, (image.height, image.width, 4))
-        array = array[:, :, :3]  # Keep BGR channels (CARLA outputs BGRA, OpenCV uses BGR)
-        # Store in queue, dropping oldest if full to maintain real-time
-        if image_queue.full():
-            try:
-                image_queue.get_nowait()
-            except queue.Empty:
-                pass
-        image_queue.put(array)
-    except Exception as e:
-        print(f"[ERR] Camera callback error: {e}")
+# --- 1. NATIVE CONTROL VIDEO INPUT ---
+def get_controller_url():
+    host = config.get("controller_host", "localhost")
+    port = config.get("controller_port", 5000)
+    return f"http://{host}:{port}" if host else None
 
-def setup_carla_task():
-    """Connects to CARLA gracefully in a separate thread"""
-    global global_world, global_camera, connection_status
+
+def check_controller_connection():
+    global connection_status
     connection_status = "Connecting..."
-    
+    host = config.get("controller_host", "localhost")
+    port = config.get("controller_port", 5000)
+    if not host:
+        connection_status = "Waiting for configuration in Controller API Panel"
+        return
+    url = f"http://{host}:{port}/traffic_lights/all"
     try:
-        if carla is None:
-            connection_status = "CARLA MODULE MISSING"
-            return
-        if global_camera:
-            try:
-                global_camera.destroy()
-            except:
-                pass
-        
-        host = config.get("carla_host")
-        port = config.get("carla_port")
-        if not host or not port:
-            connection_status = "Waiting for configuration in Control Panel"
-            return
-        
-        timeout = config.get("carla_timeout") or 5.0
-        client = carla.Client(str(host), int(port))
-        client.set_timeout(float(timeout))
-        world = client.get_world()
-        
-        # Locate RGB camera blueprint
-        blueprint_library = world.get_blueprint_library()
-        camera_bp = blueprint_library.find('sensor.camera.rgb')
-        camera_bp.set_attribute('image_size_x', '800')
-        camera_bp.set_attribute('image_size_y', '600')
-        camera_bp.set_attribute('fov', '90')
-        camera_bp.set_attribute('sensor_tick', '0.05') # Limit frame rate if needed
-        
-        # Get Spectator transform to match view
-        spectator = world.get_spectator()
-        transform = spectator.get_transform()
-        # Offset slightly to ensure we aren't inside the spectator's head or floor
-        transform.location.z += 2.0
-        
-        camera = world.spawn_actor(camera_bp, transform)
-        
-        # Start listening to sensor
-        camera.listen(lambda image: carla_sensor_callback(image))
-        global_world = world
-        global_camera = camera
-        connection_status = "Connected"
-        
-        # Start a thread to keep camera synced with spectator movement
-        def sync_view():
-            while global_camera:
-                try:
-                    spec_trans = world.get_spectator().get_transform()
-                    global_camera.set_transform(spec_trans)
-                    time.sleep(0.05)
-                except:
-                    break
-        
-        sync_thread = threading.Thread(target=sync_view, daemon=True)
-        sync_thread.start()
-        
-        print(f"CARLA connected at {host}:{port} (Synced to Spectator)")
+        req = requests.get(url, timeout=3.0)
+        req.raise_for_status()
+        if not is_live_feed_ready():
+            connection_status = "Requires LIVE FEED"
+            print("[HMI] Controller connection OK but live feed not ready", flush=True)
+        else:
+            connection_status = "Connected"
+            print(f"[HMI] Connected to controller API at {host}:{port}", flush=True)
     except Exception as e:
-        connection_status = f"Failed to connect (Check CARLA is running)"
-        global_world = None
-        global_camera = None
-        print(f"Failed to connect to CARLA at {host}:{port}. Error: {e}", flush=True)
+        connection_status = "Failed to connect (Check controller API is running)"
+        print(f"[ERR] Failed to connect to controller API: {e}", flush=True)
 
-def disconnect_carla():
-    global global_world, global_camera, connection_status
-    if global_camera:
-        try:
-            global_camera.stop()
-            global_camera.destroy()
-        except:
-            pass
-    global_camera = None
-    global_world = None
+def is_live_feed_ready():
+    if config.get('live_feed_url', '').strip():
+        return external_feed_thread is not None and external_feed_thread.is_alive()
+    return latest_frame is not None
+
+
+def disconnect_controller():
+    global connection_status
     connection_status = "Disconnected"
-    print("[HMI] Disconnected from CARLA")
+    print("[HMI] Disconnected from controller API")
 
-def bg_connect_carla():
-    thread = threading.Thread(target=setup_carla_task, daemon=True)
-    thread.start()
+def bg_connect_controller():
+    threading.Thread(target=check_controller_connection, daemon=True).start()
 
 
 # --- EXTERNAL / API BASED LIVE FEED SUPPORT ---
@@ -641,18 +598,20 @@ def stop_external_feed():
 
 # --- 4. TRAFFIC LIGHT CONTROL HELPERS ---
 def get_traffic_lights(world):
-    if carla is None or world is None:
-        return []
-    return world.get_actors().filter('*traffic_light*')
+    # Legacy helper placeholder. We rely on Thorulf API endpoints for TL IDs and states.
+    return []
 
 # --- 3. YOLOv8 CV ENGINE & PROCESSING LOOP ---
 def vision_processing_loop():
-    """CARLA camera mode: process frames and control lights"""
-    global latest_frame, lane_counts, global_world, last_process_time
+    """CONTROL camera mode: process frames and control lights"""
+    global latest_frame, lane_counts, last_process_time, system_started
     print("[INIT] Vision Processing Thread Started", flush=True)
     
     while True:
         try:
+            if not system_started:
+                time.sleep(0.5)
+                continue
             # make sure external feed thread is alive when a URL is configured
             if config.get('live_feed_url', '').strip():
                 if external_feed_thread is None or not external_feed_thread.is_alive():
@@ -675,14 +634,19 @@ def vision_processing_loop():
                 
                 last_process_time = time.time()
                 
-                # Pass scores directly — no stale dict lookup
-                if global_world is not None:
+                # Control only when system started, controller connected and live feed is alive.
+                if system_started and connection_status == "Connected" and is_live_feed_ready():
                     cycle_time = float(config.get('cycle_timer', 30.0))
+                    host = config.get("controller_host", "localhost")
+                    port = config.get("controller_port", 5000)
+                    control_url = f"http://{host}:{port}"
                     control_traffic_lights_logic(
-                        global_world, lane_counts, TL_IDS,
+                        control_url, lane_counts, TL_IDS,
                         cycle_timer=cycle_time,
                         lane_scores=current_lane_scores
                     )
+                elif connection_status == "Connected" and not is_live_feed_ready():
+                    connection_status = "Requires LIVE FEED"
                 
                 ret, buffer = cv2.imencode('.jpg', frame)
                 if ret:
@@ -701,26 +665,37 @@ def mode2_traffic_control_loop():
     using per-direction counts & weighted scores from detection overlay threads.
     Only active when control_mode == 2.
     """
+    global connection_status, mode2_counts, mode2_scores, system_started
     from detection import automation_state
     print("[INIT] Mode2 Traffic Control Thread Started", flush=True)
 
     while True:
         try:
+            # Only run mode2 control when user started the system.
+            if not system_started:
+                time.sleep(1.0)
+                continue
             # We must process mode2 controls if we have active mode2 threads.
             # To prevent conflict with main vision loop, let's proxy the current counts to the logic.
-            if global_world is not None:
+            if connection_status == "Connected" and is_live_feed_ready():
                 counts = {d: mode2_counts.get(d, 0) for d in DIRECTIONS}
                 scores = {d: mode2_scores.get(d, 0) for d in DIRECTIONS}
                 
                 # Get cycle timer from main config
                 current_config = load_config()
                 cycle_time = float(current_config.get('cycle_timer', 30.0))
+                host = current_config.get("controller_host", "localhost")
+                port = current_config.get("controller_port", 5000)
+                control_url = f"http://{host}:{port}"
                 
                 control_traffic_lights_logic(
-                    global_world, counts, TL_IDS,
+                    control_url, counts, TL_IDS,
                     cycle_timer=cycle_time,
                     lane_scores=scores
                 )
+            elif connection_status == "Connected" and not is_live_feed_ready():
+                connection_status = "Requires LIVE FEED"
+
             time.sleep(1.0)
         except Exception as e:
             print(f"[ERR] Mode2 Control Loop Error: {e}", flush=True)
@@ -739,7 +714,7 @@ def traffic_control():
 
 @app.route('/api/lane_counts')
 def api_lane_counts():
-    global lane_counts, connection_status, global_world, last_process_time
+    global lane_counts, connection_status, last_process_time
     auto_data = get_automation_data()
     cycle_time = float(config.get('cycle_timer', 30.0))
     if auto_data.get("is_yellow_phase"):
@@ -759,28 +734,16 @@ def api_lane_counts():
         else:
             is_detecting = "STALE"
             
-    # Real-time traffic light states from world
-    tl_states = {}
-    if global_world and carla is not None:
-        for lane, tid in TL_IDS.items():
-            if tid and str(tid).strip():
-                try:
-                    tl_actor = global_world.get_actor(int(tid))
-                    if tl_actor is not None:
-                        st = tl_actor.get_state()
-                        if st == carla.TrafficLightState.Red: tl_states[lane] = "red"
-                        elif st == carla.TrafficLightState.Yellow: tl_states[lane] = "yellow"
-                        elif st == carla.TrafficLightState.Green: tl_states[lane] = "green"
-                        else: tl_states[lane] = "red"
-                    else:
-                        tl_states[lane] = "red"
-                except:
-                    tl_states[lane] = "red"
-            else:
-                tl_states[lane] = "red"
+    # Real-time traffic light states from automation_state
+    tl_states = {l: "red" for l in ["North", "South", "East", "West"]}
+    if auto_data.get("is_yellow_phase"):
+        green_lane = auto_data.get("current_green_lane")
+        if green_lane in tl_states:
+            tl_states[green_lane] = "yellow"
     else:
-        # Fallback if no connection or CARLA not installed
-        tl_states = {l: "red" for l in ["North", "South", "East", "West"]}
+        green_lane = auto_data.get("current_green_lane")
+        if green_lane in tl_states:
+            tl_states[green_lane] = "green" 
         
     return json.dumps({
         "counts": lane_counts,
@@ -789,8 +752,9 @@ def api_lane_counts():
         "timer": remaining,
         "cycle_duration": current_cycle,
         "connection": connection_status,
+        "system_started": system_started,
         "detect_status": is_detecting,
-        "feed_status": "EXTERNAL" if (global_camera is None and external_feed_src and external_feed_thread and external_feed_thread.is_alive()) else ("ONLINE" if global_camera is not None else "NO SIGNAL"),
+        "feed_status": "ONLINE" if is_live_feed_ready() else "NO SIGNAL",
         "mode2_counts": {d: mode2_counts.get(d, 0) for d in DIRECTIONS},
         "control_mode": get_automation_data().get("control_mode", 1)
     })
@@ -805,13 +769,10 @@ def api_live_feed():
 
 @app.route('/api/camera/status')
 def api_camera_status():
-    """Checks if *any* active video source is present (CARLA or external URL)."""
-    global global_camera, external_feed_thread, external_feed_src
+    """Checks if *any* active video source is present (CONTROL or external URL)."""
     status = "inactive"
-    if global_camera is not None:
-        status = "carla"
-    elif external_feed_src and external_feed_thread and external_feed_thread.is_alive():
-        status = "external"
+    if is_live_feed_ready():
+        status = "online"
     return json.dumps({"status": status, "timestamp": time.time()})
 
 @app.route('/api/config')
@@ -821,7 +782,7 @@ def api_get_config():
 
 @app.route('/tl_panel', methods=['GET', 'POST'])
 def tl_panel_route():
-    global TL_IDS, global_world
+    global TL_IDS
     if request.method == 'POST':
         data = request.json if request.is_json else request.form
         
@@ -835,29 +796,38 @@ def tl_panel_route():
         invalid_ids = []
         validated_ids = {}
         
+        valid_actors = set()
+        if connection_status == "Connected":
+            host = config.get("controller_host", "localhost")
+            port = config.get("controller_port", 5000)
+            url = f"http://{host}:{port}/traffic_lights/all"
+            try:
+                resp = requests.get(url, timeout=2.0)
+                if resp.status_code == 200:
+                    for tl in resp.json():
+                        valid_actors.add(tl.get("id"))
+            except:
+                pass
+
         for lane, tid in new_ids.items():
             if tid and str(tid).strip():
                 try:
                     actor_id = int(tid)
-                    # Check actor existence in CARLA
-                    if global_world:
-                        carla_actor = global_world.get_actor(actor_id)
-                        if carla_actor is None:
+                    # Check actor existence
+                    if connection_status == "Connected":
+                        if actor_id not in valid_actors and valid_actors:
                             invalid_ids.append(f"{lane}:{tid}")
                         else:
                             validated_ids[lane] = actor_id
                     else:
-                        # If CARLA not connected, can't validate, but user asked to check if exists
-                        # So we might want to warn or prevent save.
-                        # For now, if not connected, we warn.
-                        invalid_ids.append(f"CARLA_OFFLINE({lane})")
+                        invalid_ids.append(f"CONTROL_API_OFFLINE({lane})")
                 except ValueError:
                     invalid_ids.append(f"INVALID_NUM({lane}:{tid})")
             else:
                 validated_ids[lane] = None
 
         if invalid_ids:
-            msg = f"Validation Failed: {', '.join(invalid_ids)}. IDs must exist in active CARLA session."
+            msg = f"Validation Failed: {', '.join(invalid_ids)}. IDs must exist in active CONTROL session."
             if request.is_json:
                 return jsonify({"status": "error", "message": msg})
             return render_template('tl_panel.html', tl_ids=TL_IDS, error=msg)
@@ -900,40 +870,70 @@ def api_roi_enable():
     ROI_ENABLED = data.get('enabled', True)
     return jsonify({"status": "success", "enabled": ROI_ENABLED})
 
+@app.route('/api/controller/status', methods=['GET'])
+def api_controller_status():
+    url = get_controller_url()
+    if not url:
+        return jsonify({"status": "offline", "message": "Controller host not configured"}), 400
+    try:
+        resp = requests.get(f"{url}/traffic_lights/all", timeout=2.0)
+        if resp.ok:
+            return jsonify({"status": "connected", "lights": resp.json()})
+        return jsonify({"status": "error", "message": f"Upstream responded {resp.status_code}"}), 502
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 502
+
+
 @app.route('/api/tl_test', methods=['POST'])
 def tl_test_mode():
     """Manually set a traffic light state for testing"""
-    global global_world
-    if carla is None:
-        return jsonify({"status": "error", "message": "CARLA module missing"})
-    if not global_world:
-        return jsonify({"status": "error", "message": "CARLA not connected"})
-        
+    if connection_status != "Connected":
+        return jsonify({"status": "error", "message": "Not connected to controller API"})
+
     data = request.json or {}
     actor_id = data.get('actor_id')
-    state_str = data.get('state', '').lower() # "red", "yellow", "green"
-    
+    state_str = data.get('state', '').capitalize() # "Red", "Yellow", "Green"
+
     if not actor_id or not state_str:
         return jsonify({"status": "error", "message": "Missing Actor ID or state"})
-        
+
     try:
-        tl_actor = global_world.get_actor(int(actor_id))
-        if not tl_actor:
-            return jsonify({"status": "error", "message": f"Actor {actor_id} not found"})
-            
-        mapping = {
-            "red": carla.TrafficLightState.Red,
-            "yellow": carla.TrafficLightState.Yellow,
-            "green": carla.TrafficLightState.Green
-        }
-        
-        target_state = mapping.get(state_str.lower())
-        if target_state is not None:
-            tl_actor.set_state(target_state)
-            return jsonify({"status": "success", "message": f"Actor {actor_id} set to {state_str.upper()}"})
-        return jsonify({"status": "error", "message": "Invalid state"})
+        host = config.get("controller_host", "localhost")
+        port = config.get("controller_port", 5000)
+        url = f"http://{host}:{port}/traffic_light/set_multiple"
+
+        updates = [{"id": int(actor_id), "state": state_str, "freeze": True}]
+        resp = requests.post(url, json={"updates": updates}, timeout=2.0)
+        resp.raise_for_status()
+
+        return jsonify({"status": "success", "message": f"Actor {actor_id} set to {state_str}"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})
+
+
+@app.route('/api/traffic_lights/all', methods=['GET'])
+def api_traffic_lights_all():
+    url = get_controller_url()
+    if not url:
+        return jsonify({"status": "error", "message": "Controller API not configured"}), 400
+    try:
+        resp = requests.get(f"{url}/traffic_lights/all", timeout=config.get('controller_timeout', 5.0))
+        return Response(resp.content, status=resp.status_code, content_type=resp.headers.get('Content-Type', 'application/json'))
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 502
+
+
+@app.route('/api/traffic_light/set_multiple', methods=['POST'])
+def api_traffic_light_set_multiple():
+    url = get_controller_url()
+    if not url:
+        return jsonify({"status": "error", "message": "Controller API not configured"}), 400
+    body = request.get_json(force=True, silent=True) or {}
+    try:
+        resp = requests.post(f"{url}/traffic_light/set_multiple", json=body, timeout=config.get('controller_timeout', 5.0))
+        return Response(resp.content, status=resp.status_code, content_type=resp.headers.get('Content-Type', 'application/json'))
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 502
 
 @app.route('/api/roi_sets', methods=['GET', 'POST'])
 def roi_sets_api():
@@ -986,19 +986,42 @@ def load_roi_set(name):
 
 @app.route('/panel', methods=['GET', 'POST'])
 def control_panel():
-    global config, connection_status, global_camera
+    global config, connection_status, system_started
     if request.method == 'POST':
         data = request.json if request.is_json else request.form
         action = data.get('action')
-        
+        # Keep config updated from incoming form even if start action runs directly
+        if data.get('controller_host') is not None:
+            config['controller_host'] = data.get('controller_host')
+        if data.get('controller_port') is not None:
+            try:
+                config['controller_port'] = int(data.get('controller_port'))
+            except Exception:
+                pass
+        if data.get('controller_timeout') is not None:
+            try:
+                config['controller_timeout'] = float(data.get('controller_timeout'))
+            except Exception:
+                pass
+        if data.get('yolo_model') is not None:
+            config['yolo_model'] = data.get('yolo_model')
+        if data.get('cycle_timer') is not None:
+            try:
+                config['cycle_timer'] = int(data.get('cycle_timer'))
+            except Exception:
+                pass
+        if data.get('live_feed_url') is not None:
+            config['live_feed_url'] = data.get('live_feed_url')
+        save_config(config)
+
         # Simple Save
-        if action in ['save_only', 'toggle_connect']:
+        if action in ['save_only', 'toggle_connect', 'start_system', 'stop_system']:
             old_path = config.get('yolo_model', '')
             old_url = config.get('live_feed_url', '')
 
-            config['carla_host'] = data.get('carla_host', config.get('carla_host', ''))
-            config['carla_port'] = int(data.get('carla_port', 2000)) if data.get('carla_port') else config.get('carla_port')
-            config['carla_timeout'] = float(data.get('carla_timeout', 10.0)) if data.get('carla_timeout') else config.get('carla_timeout')
+            config['controller_host'] = data.get('controller_host', data.get('thorulf_host', config.get('controller_host', '')))
+            config['controller_port'] = int(data.get('controller_port', data.get('thorulf_port', config.get('controller_port', 2000)))) if data.get('controller_port', data.get('thorulf_port', None)) else config.get('controller_port', 5000)
+            config['controller_timeout'] = float(data.get('controller_timeout', data.get('thorulf_timeout', config.get('controller_timeout', 10.0)))) if data.get('controller_timeout', data.get('thorulf_timeout', None)) else config.get('controller_timeout', 10.0)
             config['yolo_model'] = data.get('yolo_model', config.get('yolo_model', ''))
             config['cycle_timer'] = int(data.get('cycle_timer', 30)) if data.get('cycle_timer') else config.get('cycle_timer', 30)
             config['flask_host'] = data.get('flask_host', config.get('flask_host', '0.0.0.0'))
@@ -1021,17 +1044,27 @@ def control_panel():
                     stop_external_feed()
             
         if action == 'toggle_connect':
-            if carla is None:
-                msg = "CARLA integration unavailable"
-            elif global_camera:
-                disconnect_carla()
-                msg = "Disconnected from simulator"
+            if not is_live_feed_ready():
+                msg = "Cannot connect: Live feed not ready"
+                connection_status = "Requires LIVE FEED"
+            elif connection_status == "Connected":
+                disconnect_controller()
+                msg = "Disconnected from controller"
             else:
-                bg_connect_carla()
-                msg = "Connecting to CARLA..."
+                bg_connect_controller()
+                msg = "Connecting to controller..."
+        elif action == 'start_system':
+            missing = check_start_prereqs()
+            if missing:
+                msg = "Cannot start. Missing: " + ", ".join(missing)
+            else:
+                system_started = True
+                msg = "System started"
+        elif action == 'stop_system':
+            system_started = False
+            msg = "System stopped"
         else:
             msg = "Configuration saved to database"
-
         if request.is_json:
             return jsonify({"status": "success", "message": msg})
         return redirect(url_for('control_panel'))
@@ -1143,9 +1176,4 @@ if __name__ == '__main__':
         app.run(host=flask_host, port=flask_port, debug=True, use_reloader=False)
         
     except KeyboardInterrupt:
-        print("Shutting down... destroying camera.")
-        if global_camera:
-            try:
-                global_camera.destroy()
-            except:
-                pass
+        print("Shutting down...")

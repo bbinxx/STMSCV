@@ -1,0 +1,88 @@
+<!-- WINDOW: Connection -->
+        <div class="fwin" id="win-connection" style="width:340px; top:30px; left:480px; display:none;">
+            <div class="fwin-titlebar">
+                <span class="fwin-title">[ CONNECTION / SETTINGS ]</span>
+                <button class="fwin-btn pin-btn" title="Pin">P</button>
+                <button class="fwin-btn close-btn" title="Close">X</button>
+            </div>
+            <div class="fwin-body">
+                <div class="section-head">FLASK SERVER</div>
+                <div class="form-grid-2">
+                    <div class="form-group">
+                        <label class="form-label">FLASK HOST</label>
+                        <input type="text" class="form-input" id="cfg-flask-host" placeholder="0.0.0.0">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">FLASK PORT</label>
+                        <input type="number" class="form-input" id="cfg-flask-port" placeholder="5050">
+                    </div>
+                </div>
+                <div class="section-head">TRAFFIC INPUTS & WORKFLOW</div>
+                <div class="form-group">
+                    <label class="form-label">CYCLE TIMER (S)</label>
+                    <input type="number" class="form-input" id="cfg-cycle-timer" placeholder="30" min="5">
+                    <small class="text-dim">Set how long each green phase should run (for automated mode).</small>
+                </div>
+                <div class="section-head">CONTROLLER API</div>
+                <div class="form-group">
+                    <label class="form-label">CONTROLLER HOST</label>
+                    <input type="text" class="form-input" id="cfg-controller-host" placeholder="127.0.0.1">
+                </div>
+                <div class="form-grid-2">
+                    <div class="form-group">
+                        <label class="form-label">CONTROLLER PORT</label>
+                        <input type="number" class="form-input" id="cfg-controller-port" placeholder="2000">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">TIMEOUT (S)</label>
+                        <input type="number" class="form-input" id="cfg-timeout" step="0.1" placeholder="3">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <button class="btn btn-cyan" id="btn-test-api" type="button">TEST CONTROLLER API</button>
+                </div>
+                <div class="section-head">MODE 2 CAMERA MAPPING</div>
+                <div class="form-group">
+                    <label class="form-label">PASTE MULTI-CAM LINKS (one per line, optional direction prefix e.g. North=https://...)</label>
+                    <textarea class="form-input" id="cfg-mode2-links" style="height:90px; font-family: monospace; resize:vertical;"></textarea>
+                </div>
+                <div class="form-grid-2">
+                    <div class="form-group">
+                        <label class="form-label">NORTH SOURCE</label>
+                        <input type="text" class="form-input" id="mode2-north" placeholder="e.g. rtsp://...">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">SOUTH SOURCE</label>
+                        <input type="text" class="form-input" id="mode2-south" placeholder="e.g. rtsp://...">
+                    </div>
+                </div>
+                <div class="form-grid-2">
+                    <div class="form-group">
+                        <label class="form-label">EAST SOURCE</label>
+                        <input type="text" class="form-input" id="mode2-east" placeholder="e.g. rtsp://...">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">WEST SOURCE</label>
+                        <input type="text" class="form-input" id="mode2-west" placeholder="e.g. rtsp://...">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <button class="btn btn-cyan" id="btn-apply-mode2-links" type="button">APPLY MODE2 LINKS</button>
+                </div>
+                <div class="section-head">DETECTION MODEL</div>
+                <div class="form-group">
+                    <label class="form-label">YOLO MODEL PATH</label>
+                    <input type="text" class="form-input" id="cfg-yolo" placeholder="yolov8n.pt">
+                </div>
+                <div style="margin-top:20px; display:flex; flex-direction:column; gap:8px;">
+                    <button class="btn btn-yellow" id="btn-save-only">SAVE CONFIG</button>
+                    <button class="btn btn-green" id="btn-toggle-connect">CONNECT</button>
+                    <button class="btn btn-cyan" id="btn-start-system">START SYSTEM</button>
+                    <button class="btn btn-red" id="btn-stop-system">STOP SYSTEM</button>
+                </div>
+                <div class="form-hint" style="margin-top:10px; text-align:center;">
+                    SERVER RUNNING ON PORT 5050
+                </div>
+            </div>
+            <div class="fwin-resize"></div>
+        </div>
