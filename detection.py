@@ -179,16 +179,38 @@ def control_traffic_lights_logic(control_url, counts, tl_ids, cycle_timer=30.0, 
         lane_scores = {}
     
     LANE_ORDER = ["North", "East", "South", "West"]
-    MIN_GREEN_TIME = 10.0
+    MIN_GREEN_TIME = 5.0
     
     current_time = time.time()
     if automation_state["last_switch_time"] == 0:
         automation_state["last_switch_time"] = current_time
-        if automation_state["current_green_lane"] not in LANE_ORDER:
-            automation_state["current_green_lane"] = "North"
+        # On very first tick: determine initial priority from live counts.
+        # The lane with the most vehicles (or highest weighted score as tie-breaker)
+        # gets green immediately. Fall back to North if no vehicles detected yet.
+        if automation_state["current_green_lane"] not in LANE_ORDER or sum(counts.values()) > 0:
+            if sum(counts.values()) > 0:
+                initial_lane = max(
+                    counts.items(),
+                    key=lambda kv: (kv[1], lane_scores.get(kv[0], kv[1]))
+                )[0]
+                automation_state["current_green_lane"] = initial_lane
+                print(f"[AUTO] Initial priority lane determined: '{initial_lane}' "
+                      f"(count:{counts.get(initial_lane,0)}, score:{lane_scores.get(initial_lane,0)})", flush=True)
+            else:
+                automation_state["current_green_lane"] = "North"
+                print("[AUTO] No vehicles detected — initial priority lane: 'North' (default)", flush=True)
 
+    # Force ALL-RED when no vehicles are detected in any ROI.
+    if sum(counts.values()) == 0:
+        if automation_state["current_green_lane"] is not None or automation_state["is_yellow_phase"]:
+            print("[AUTO] No vehicles in any ROI — all traffic lights set to RED", flush=True)
+        automation_state["current_green_lane"] = None
+        automation_state["is_yellow_phase"] = False
+        automation_state["yellow_trigger_lane"] = None
+        automation_state["last_switch_time"] = current_time
+    
     # 1. Handle Yellow Phase transition (Common for both modes)
-    if automation_state["is_yellow_phase"]:
+    elif automation_state["is_yellow_phase"]:
         if current_time - automation_state["last_switch_time"] >= 3.0: # 3s Yellow duration
             automation_state["is_yellow_phase"] = False
             automation_state["current_green_lane"] = automation_state["yellow_trigger_lane"]
@@ -199,50 +221,67 @@ def control_traffic_lights_logic(control_url, counts, tl_ids, cycle_timer=30.0, 
     else:
         next_lane = None
         
-        # --- MODE 1: Fixed Cycle ---
+        # --- MODE 1: Fixed Cycle (with empty-lane early exit) ---
         if automation_state.get("control_mode", 1) == 1:
-            if current_time - automation_state["last_switch_time"] >= cycle_timer:
+            current_lane = automation_state["current_green_lane"]
+            current_count = counts.get(current_lane, 0)
+            time_since_last = current_time - automation_state["last_switch_time"]
+
+            # Find busiest waiting lane (excluding current)
+            lane_priority = sorted(
+                counts.items(),
+                key=lambda item: (item[1], lane_scores.get(item[0], item[1])),
+                reverse=True
+            )
+            busiest_lane, busiest_count = lane_priority[0]
+
+            # Early exit: current lane cleared → immediately yield to busiest lane
+            # (grace period = MIN_GREEN_TIME to avoid detector flicker)
+            if current_count == 0 and busiest_count > 0 and time_since_last >= MIN_GREEN_TIME:
+                next_lane = busiest_lane
+                print(f"[AUTO] Mode 1: Lane '{current_lane}' cleared → early switch to "
+                      f"'{next_lane}' (count:{busiest_count})", flush=True)
+
+            # Normal fixed-cycle rotation after cycle_timer
+            elif time_since_last >= cycle_timer:
                 try:
-                    current_idx = LANE_ORDER.index(automation_state["current_green_lane"])
+                    current_idx = LANE_ORDER.index(current_lane)
                 except ValueError:
                     current_idx = 0
                 next_idx = (current_idx + 1) % len(LANE_ORDER)
                 next_lane = LANE_ORDER[next_idx]
                 print(f"[AUTO] Mode 1: Cycle Switch -> {next_lane}", flush=True)
 
-        # --- MODE 2: Rush Priority (Weighted Intensity) ---
+        # --- MODE 2: Busiest Lane Every 5s ---
         else:
             time_since_last = current_time - automation_state["last_switch_time"]
             current_lane = automation_state["current_green_lane"]
             current_count = counts.get(current_lane, 0)
-            current_score = automation_state.get("lane_scores", {}).get(current_lane, 0)
 
-            # Build sorted list of non-empty lanes by weighted score (desc)
-            # Use passed-in lane_scores, fall back to raw count if missing
-            scored = sorted(
-                [(lane, lane_scores.get(lane, cnt))
-                 for lane, cnt in counts.items() if cnt > 0],
-                key=lambda x: x[1], reverse=True
+            # Use raw vehicle counts first, then weighted score as tie-breaker.
+            lane_priority = sorted(
+                counts.items(),
+                key=lambda item: (item[1], lane_scores.get(item[0], item[1])),
+                reverse=True
             )
 
-            # Skip current lane if empty — jump immediately to busiest non-empty lane
-            if current_count == 0 and scored:
-                next_lane = scored[0][0]
-                print(f"[AUTO] Rush: '{current_lane}' empty → skip to '{next_lane}' (score:{scored[0][1]})", flush=True)
+            busiest_lane, busiest_count = lane_priority[0]
+            busiest_score = lane_scores.get(busiest_lane, busiest_count)
 
-            # Switch if another lane has higher score AND min green time passed
-            elif scored and scored[0][0] != current_lane and time_since_last >= MIN_GREEN_TIME:
-                next_lane = scored[0][0]
-                current_score = lane_scores.get(current_lane, current_count)
-                print(f"[AUTO] Rush: Switch → '{next_lane}' (score:{scored[0][1]} > '{current_lane}':{current_score})", flush=True)
-
-            # Safety fallback: prevent lane starvation if detection fails
+            if busiest_count > 0 and current_lane not in LANE_ORDER:
+                next_lane = busiest_lane
+                print(f"[AUTO] Rush: No active green lane, selecting busiest lane '{next_lane}' (count:{busiest_count})", flush=True)
+            elif current_count == 0 and busiest_count > 0:
+                next_lane = busiest_lane
+                print(f"[AUTO] Rush: Current lane '{current_lane}' empty → switching to busiest lane '{next_lane}' (count:{busiest_count})", flush=True)
+            elif busiest_lane != current_lane and time_since_last >= MIN_GREEN_TIME:
+                next_lane = busiest_lane
+                print(f"[AUTO] Rush: Switch to busiest lane '{next_lane}' after {MIN_GREEN_TIME}s (count:{busiest_count})", flush=True)
             elif time_since_last >= cycle_timer * 2:
                 try:
                     current_idx = LANE_ORDER.index(current_lane)
                 except ValueError:
                     current_idx = 0
-                # Skip to next lane that has vehicles, otherwise rotate
                 for i in range(1, len(LANE_ORDER)):
                     candidate = LANE_ORDER[(current_idx + i) % len(LANE_ORDER)]
                     if counts.get(candidate, 0) > 0:

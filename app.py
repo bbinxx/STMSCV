@@ -734,20 +734,30 @@ def api_lane_counts():
         else:
             is_detecting = "STALE"
             
+    # Use the active count source for the current control mode.
+    control_mode = auto_data.get("control_mode", 1)
+    counts = {d: mode2_counts.get(d, 0) for d in DIRECTIONS} if control_mode == 2 else lane_counts
+
     # Real-time traffic light states from automation_state
     tl_states = {l: "red" for l in ["North", "South", "East", "West"]}
-    if auto_data.get("is_yellow_phase"):
-        green_lane = auto_data.get("current_green_lane")
-        if green_lane in tl_states:
-            tl_states[green_lane] = "yellow"
+    green_lane = None
+    if any(v > 0 for v in counts.values()):
+        if auto_data.get("is_yellow_phase"):
+            green_lane = auto_data.get("current_green_lane")
+            if green_lane in tl_states:
+                tl_states[green_lane] = "yellow"
+        else:
+            green_lane = auto_data.get("current_green_lane")
+            if green_lane in tl_states:
+                tl_states[green_lane] = "green"
     else:
-        green_lane = auto_data.get("current_green_lane")
-        if green_lane in tl_states:
-            tl_states[green_lane] = "green" 
-        
+        green_lane = None
+        # If there are no vehicles, enforce all-red regardless of prior automation state.
+        tl_states = {l: "red" for l in ["North", "South", "East", "West"]}
+
     return json.dumps({
-        "counts": lane_counts,
-        "green_lane": auto_data["current_green_lane"],
+        "counts": counts,
+        "green_lane": green_lane,
         "tl_states": tl_states,
         "timer": remaining,
         "cycle_duration": current_cycle,
@@ -756,7 +766,7 @@ def api_lane_counts():
         "detect_status": is_detecting,
         "feed_status": "ONLINE" if is_live_feed_ready() else "NO SIGNAL",
         "mode2_counts": {d: mode2_counts.get(d, 0) for d in DIRECTIONS},
-        "control_mode": get_automation_data().get("control_mode", 1)
+        "control_mode": control_mode
     })
 
 @app.route('/api/live_feed')

@@ -1429,60 +1429,269 @@
             gap: 4px;
         }
 
+        /* ===== REALISTIC TRAFFIC LIGHT PANEL (MODE 2) ===== */
         .m2-tl-panel {
-            width: 72px;
-            background: var(--bg-2);
+            width: 84px;
+            background: linear-gradient(180deg, #0c0e14 0%, #111520 100%);
             border-left: 1px solid var(--border);
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: center;
-            gap: 6px;
+            justify-content: flex-start;
+            gap: 0;
             flex-shrink: 0;
-            padding: 10px 0;
+            padding: 8px 0 8px;
+            position: relative;
         }
 
         .m2-tl-dir {
             font-family: 'Share Tech Mono', monospace;
-            font-size: calc(var(--fs-base) - 3px);
+            font-size: calc(var(--fs-base) - 4px);
             color: var(--text-dim);
-            letter-spacing: 0.12em;
+            letter-spacing: 0.18em;
             text-transform: uppercase;
+            margin-bottom: 4px;
         }
 
-        .m2-tl-housing {
-            background: #0a0a0a;
-            border: 1px solid var(--border);
-            border-radius: 4px;
-            padding: 8px 6px;
+        /* Pole */
+        .m2-tl-pole {
+            width: 6px;
+            height: 10px;
+            background: linear-gradient(90deg, #1a1f2a, #2a3040, #1a1f2a);
+            border-radius: 1px;
+            flex-shrink: 0;
+        }
+
+        /* Main housing body */
+        .m2-tl-body {
+            width: 54px;
+            background: linear-gradient(160deg, #1c2132 0%, #0d1018 60%, #151b28 100%);
+            border: 1px solid rgba(255,255,255,0.07);
+            border-radius: 6px;
+            box-shadow:
+                inset 0 1px 0 rgba(255,255,255,0.04),
+                inset 0 -1px 0 rgba(0,0,0,0.6),
+                0 4px 16px rgba(0,0,0,0.7);
+            padding: 6px 4px 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2px;
+            flex-shrink: 0;
+            position: relative;
+        }
+
+        /* Visor / shade strip at top of housing */
+        .m2-tl-visor {
+            width: 100%;
+            height: 5px;
+            background: linear-gradient(180deg, rgba(0,0,0,0.7) 0%, transparent 100%);
+            border-radius: 4px 4px 0 0;
+            margin-bottom: 2px;
+            flex-shrink: 0;
+        }
+
+        .m2-tl-bulb-wrap {
             display: flex;
             flex-direction: column;
             gap: 5px;
             align-items: center;
+            width: 100%;
         }
 
-        .m2-tl-light {
-            width: 18px;
-            height: 18px;
+        /* Single bulb */
+        .m2-tl-bulb {
+            width: 32px;
+            height: 32px;
             border-radius: 50%;
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            background: #111;
-            transition: background 0.25s, box-shadow 0.25s;
+            background: radial-gradient(circle at 38% 35%, #222 0%, #111 70%, #0a0a0a 100%);
+            border: 1px solid rgba(255,255,255,0.06);
+            box-shadow:
+                inset 0 2px 4px rgba(255,255,255,0.04),
+                inset 0 -2px 4px rgba(0,0,0,0.6);
+            transition: background 0.28s ease, box-shadow 0.28s ease;
+            position: relative;
+            flex-shrink: 0;
         }
 
-        .m2-tl-light.lit-red {
-            background: var(--red);
-            box-shadow: 0 0 10px var(--red);
+        /* Lens glare dot */
+        .m2-tl-bulb::after {
+            content: '';
+            position: absolute;
+            top: 20%;
+            left: 26%;
+            width: 30%;
+            height: 20%;
+            background: rgba(255,255,255,0.08);
+            border-radius: 50%;
+            transform: rotate(-30deg);
+            pointer-events: none;
         }
 
-        .m2-tl-light.lit-yellow {
-            background: var(--yellow);
-            box-shadow: 0 0 10px var(--yellow);
+        /* RED ON */
+        .m2-tl-bulb.lit-red {
+            background: radial-gradient(circle at 38% 35%, #ff6670 0%, #f03050 45%, #900020 100%);
+            box-shadow:
+                0 0 14px 4px rgba(240, 48, 80, 0.65),
+                0 0 36px 8px rgba(240, 48, 80, 0.25),
+                inset 0 2px 4px rgba(255,180,180,0.15);
+            animation: tl-pulse-red 1.8s ease-in-out infinite;
         }
 
-        .m2-tl-light.lit-green {
+        /* YELLOW ON */
+        .m2-tl-bulb.lit-yellow {
+            background: radial-gradient(circle at 38% 35%, #ffe066 0%, #f5c400 45%, #9a7a00 100%);
+            box-shadow:
+                0 0 14px 4px rgba(245, 196, 0, 0.7),
+                0 0 36px 8px rgba(245, 196, 0, 0.28),
+                inset 0 2px 4px rgba(255,240,120,0.15);
+            animation: tl-pulse-yellow 0.9s ease-in-out infinite;
+        }
+
+        /* GREEN ON */
+        .m2-tl-bulb.lit-green {
+            background: radial-gradient(circle at 38% 35%, #5fffaa 0%, #00e87a 45%, #006635 100%);
+            box-shadow:
+                0 0 14px 4px rgba(0, 232, 122, 0.65),
+                0 0 36px 8px rgba(0, 232, 122, 0.25),
+                inset 0 2px 4px rgba(120,255,190,0.15);
+            animation: tl-pulse-green 2.4s ease-in-out infinite;
+        }
+
+        @keyframes tl-pulse-red {
+            0%,100% { box-shadow: 0 0 14px 4px rgba(240,48,80,0.65), 0 0 36px 8px rgba(240,48,80,0.25); }
+            50%      { box-shadow: 0 0 20px 8px rgba(240,48,80,0.9),  0 0 50px 14px rgba(240,48,80,0.4); }
+        }
+        @keyframes tl-pulse-yellow {
+            0%,100% { box-shadow: 0 0 14px 4px rgba(245,196,0,0.7), 0 0 36px 8px rgba(245,196,0,0.28); opacity:1; }
+            50%      { box-shadow: 0 0 22px 10px rgba(245,196,0,1.0), 0 0 55px 18px rgba(245,196,0,0.5); opacity:0.8; }
+        }
+        @keyframes tl-pulse-green {
+            0%,100% { box-shadow: 0 0 14px 4px rgba(0,232,122,0.65), 0 0 36px 8px rgba(0,232,122,0.25); }
+            50%      { box-shadow: 0 0 20px 8px rgba(0,232,122,0.9),  0 0 50px 14px rgba(0,232,122,0.4); }
+        }
+
+        /* Countdown bar under the housing */
+        .m2-tl-countdown-wrap {
+            width: 52px;
+            height: 4px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 2px;
+            margin-top: 5px;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+
+        .m2-tl-countdown-bar {
+            height: 100%;
+            width: 0%;
             background: var(--green);
-            box-shadow: 0 0 10px var(--green);
+            border-radius: 2px;
+            transition: width 0.9s linear, background 0.5s;
+        }
+
+        .m2-tl-countdown-bar.warn {
+            background: var(--yellow);
+        }
+
+        .m2-tl-countdown-bar.critical {
+            background: var(--red);
+        }
+
+        /* Vehicle count */
+        .m2-tl-stats {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 6px;
+            gap: 0;
+        }
+
+        /* Load bar (relative traffic proportion) */
+        .m2-tl-load-wrap {
+            width: 52px;
+            height: 5px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 3px;
+            margin-top: 4px;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+
+        .m2-tl-load-bar {
+            height: 100%;
+            width: 0%;
+            background: var(--cyan);
+            border-radius: 3px;
+            transition: width 0.7s ease, background 0.4s;
+        }
+
+        .m2-tl-load-bar.hi {
+            background: var(--red);
+        }
+
+        .m2-tl-load-bar.med {
+            background: var(--amber);
+        }
+
+        /* ===== PRIORITY BADGES (overlay on video) ===== */
+        .m2-priority-badge {
+            position: absolute;
+            top: 6px;
+            right: 6px;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 3px);
+            font-weight: bold;
+            letter-spacing: 0.08em;
+            padding: 2px 7px;
+            border-radius: 2px;
+            border: 1px solid transparent;
+            background: rgba(8,9,12,0.85);
+            pointer-events: none;
+            z-index: 15;
+            display: none;
+            white-space: nowrap;
+        }
+
+        .m2-priority-badge.rank-1 {
+            display: block;
+            color: #ffd700;
+            border-color: #ffd700;
+            text-shadow: 0 0 8px rgba(255,215,0,0.8);
+            box-shadow: 0 0 10px rgba(255,215,0,0.25);
+        }
+
+        .m2-priority-badge.rank-2 {
+            display: block;
+            color: #c0c8d8;
+            border-color: #8090a8;
+        }
+
+        .m2-priority-badge.rank-3 {
+            display: block;
+            color: #cd7f32;
+            border-color: #9a5c24;
+        }
+
+        .m2-priority-badge.rank-4 {
+            display: block;
+            color: var(--text-dim);
+            border-color: var(--border);
+        }
+
+        /* Count label inside TL stats block */
+        .m2-count-lbl {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) + 2px);
+            color: var(--text-bright);
+            line-height: 1;
+        }
+
+        .m2-count-sub {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 5px);
+            color: var(--text-dim);
+            letter-spacing: 0.15em;
         }
 
         .m2-toggle-wrap {

@@ -1442,61 +1442,205 @@
             gap: 4px;
         }
 
+        /* ===== REALISTIC TRAFFIC LIGHT PANEL (MODE 2) ===== */
         .m2-tl-panel {
-            width: 72px;
-            background: var(--bg-2);
+            width: 88px;
+            background: linear-gradient(180deg, #0c0e14 0%, #111520 100%);
             border-left: 1px solid var(--border);
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: center;
-            gap: 6px;
+            justify-content: flex-start;
+            gap: 0;
             flex-shrink: 0;
-            padding: 10px 0;
+            padding: 8px 0 8px;
+            position: relative;
         }
 
         .m2-tl-dir {
             font-family: 'Share Tech Mono', monospace;
-            font-size: calc(var(--fs-base) - 3px);
+            font-size: calc(var(--fs-base) - 4px);
             color: var(--text-dim);
-            letter-spacing: 0.12em;
+            letter-spacing: 0.18em;
             text-transform: uppercase;
+            margin-bottom: 4px;
         }
 
-        .m2-tl-housing {
-            background: #0a0a0a;
-            border: 1px solid var(--border);
-            border-radius: 4px;
-            padding: 8px 6px;
+        /* Pole */
+        .m2-tl-pole {
+            width: 6px;
+            height: 10px;
+            background: linear-gradient(90deg, #1a1f2a, #2a3040, #1a1f2a);
+            border-radius: 1px;
+            flex-shrink: 0;
+        }
+
+        /* Main housing body */
+        .m2-tl-body {
+            width: 58px;
+            background: linear-gradient(160deg, #1c2132 0%, #0d1018 60%, #151b28 100%);
+            border: 1px solid rgba(255,255,255,0.07);
+            border-radius: 6px;
+            box-shadow:
+                inset 0 1px 0 rgba(255,255,255,0.04),
+                inset 0 -1px 0 rgba(0,0,0,0.6),
+                0 4px 16px rgba(0,0,0,0.7);
+            padding: 6px 4px 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2px;
+            flex-shrink: 0;
+        }
+
+        /* Visor shade strip */
+        .m2-tl-visor {
+            width: 100%;
+            height: 5px;
+            background: linear-gradient(180deg, rgba(0,0,0,0.7) 0%, transparent 100%);
+            border-radius: 4px 4px 0 0;
+            margin-bottom: 2px;
+            flex-shrink: 0;
+        }
+
+        .m2-tl-bulb-wrap {
             display: flex;
             flex-direction: column;
             gap: 5px;
             align-items: center;
+            width: 100%;
         }
 
-        .m2-tl-light {
-            width: 18px;
-            height: 18px;
+        /* Single bulb */
+        .m2-tl-bulb {
+            width: 34px;
+            height: 34px;
             border-radius: 50%;
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            background: #111;
-            transition: background 0.25s, box-shadow 0.25s;
+            background: radial-gradient(circle at 38% 35%, #222 0%, #111 70%, #0a0a0a 100%);
+            border: 1px solid rgba(255,255,255,0.06);
+            box-shadow:
+                inset 0 2px 4px rgba(255,255,255,0.04),
+                inset 0 -2px 4px rgba(0,0,0,0.6);
+            transition: background 0.28s ease, box-shadow 0.28s ease;
+            position: relative;
+            flex-shrink: 0;
+        }
+        /* Lens glare */
+        .m2-tl-bulb::after {
+            content: '';
+            position: absolute;
+            top: 20%; left: 26%;
+            width: 30%; height: 20%;
+            background: rgba(255,255,255,0.08);
+            border-radius: 50%;
+            transform: rotate(-30deg);
+            pointer-events: none;
+        }
+        /* RED ON */
+        .m2-tl-bulb.lit-red {
+            background: radial-gradient(circle at 38% 35%, #ff6670 0%, #f03050 45%, #900020 100%);
+            box-shadow: 0 0 14px 4px rgba(240,48,80,0.7), 0 0 36px 8px rgba(240,48,80,0.3),
+                        inset 0 2px 4px rgba(255,180,180,0.15);
+            animation: tl-pulse-red 1.8s ease-in-out infinite;
+        }
+        /* YELLOW ON */
+        .m2-tl-bulb.lit-yellow {
+            background: radial-gradient(circle at 38% 35%, #ffe066 0%, #f5c400 45%, #9a7a00 100%);
+            box-shadow: 0 0 14px 4px rgba(245,196,0,0.75), 0 0 36px 8px rgba(245,196,0,0.3),
+                        inset 0 2px 4px rgba(255,240,120,0.15);
+            animation: tl-pulse-yellow 0.9s ease-in-out infinite;
+        }
+        /* GREEN ON */
+        .m2-tl-bulb.lit-green {
+            background: radial-gradient(circle at 38% 35%, #5fffaa 0%, #00e87a 45%, #006635 100%);
+            box-shadow: 0 0 14px 4px rgba(0,232,122,0.7), 0 0 36px 8px rgba(0,232,122,0.28),
+                        inset 0 2px 4px rgba(120,255,190,0.15);
+            animation: tl-pulse-green 2.4s ease-in-out infinite;
+        }
+        @keyframes tl-pulse-red {
+            0%,100% { box-shadow: 0 0 14px 4px rgba(240,48,80,0.7), 0 0 36px 8px rgba(240,48,80,0.3); }
+            50%      { box-shadow: 0 0 22px 9px rgba(240,48,80,1.0), 0 0 52px 16px rgba(240,48,80,0.5); }
+        }
+        @keyframes tl-pulse-yellow {
+            0%,100% { box-shadow: 0 0 14px 4px rgba(245,196,0,0.75), 0 0 36px 8px rgba(245,196,0,0.3); opacity:1; }
+            50%      { box-shadow: 0 0 24px 11px rgba(245,196,0,1.0), 0 0 58px 18px rgba(245,196,0,0.55); opacity:0.8; }
+        }
+        @keyframes tl-pulse-green {
+            0%,100% { box-shadow: 0 0 14px 4px rgba(0,232,122,0.7), 0 0 36px 8px rgba(0,232,122,0.28); }
+            50%      { box-shadow: 0 0 22px 9px rgba(0,232,122,1.0), 0 0 52px 15px rgba(0,232,122,0.45); }
         }
 
-        .m2-tl-light.lit-red {
-            background: var(--red);
-            box-shadow: 0 0 10px var(--red);
+        /* Countdown bar */
+        .m2-tl-countdown-wrap {
+            width: 56px; height: 4px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 2px; margin-top: 5px;
+            overflow: hidden; flex-shrink: 0;
+        }
+        .m2-tl-countdown-bar {
+            height: 100%; width: 0%;
+            background: var(--green); border-radius: 2px;
+            transition: width 0.9s linear, background 0.5s;
+        }
+        .m2-tl-countdown-bar.warn  { background: var(--yellow); }
+        .m2-tl-countdown-bar.critical { background: var(--red); }
+
+        /* Vehicle count */
+        .m2-tl-stats {
+            display: flex; flex-direction: column;
+            align-items: center; margin-top: 6px; gap: 0;
+        }
+        .m2-count-lbl {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) + 2px);
+            color: var(--text-bright); line-height: 1;
+        }
+        .m2-count-sub {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 5px);
+            color: var(--text-dim); letter-spacing: 0.15em;
         }
 
-        .m2-tl-light.lit-yellow {
-            background: var(--yellow);
-            box-shadow: 0 0 10px var(--yellow);
+        /* Traffic load bar */
+        .m2-tl-load-wrap {
+            width: 56px; height: 5px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 3px; margin-top: 4px;
+            overflow: hidden; flex-shrink: 0;
         }
+        .m2-tl-load-bar {
+            height: 100%; width: 0%;
+            background: var(--cyan); border-radius: 3px;
+            transition: width 0.7s ease, background 0.4s;
+        }
+        .m2-tl-load-bar.hi  { background: var(--red); }
+        .m2-tl-load-bar.med { background: var(--amber); }
 
-        .m2-tl-light.lit-green {
-            background: var(--green);
-            box-shadow: 0 0 10px var(--green);
+        /* Priority badge (overlay on video) */
+        .m2-priority-badge {
+            position: absolute;
+            top: 6px; right: 6px;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 3px);
+            font-weight: bold;
+            letter-spacing: 0.08em;
+            padding: 2px 7px;
+            border-radius: 2px;
+            border: 1px solid transparent;
+            background: rgba(8,9,12,0.85);
+            pointer-events: none;
+            z-index: 15;
+            display: none;
+            white-space: nowrap;
         }
+        .m2-priority-badge.rank-1 {
+            display: block; color: #ffd700; border-color: #ffd700;
+            text-shadow: 0 0 8px rgba(255,215,0,0.8);
+            box-shadow: 0 0 10px rgba(255,215,0,0.25);
+        }
+        .m2-priority-badge.rank-2 { display: block; color: #c0c8d8; border-color: #8090a8; }
+        .m2-priority-badge.rank-3 { display: block; color: #cd7f32; border-color: #9a5c24; }
+        .m2-priority-badge.rank-4 { display: block; color: var(--text-dim); border-color: var(--border); }
 
         .m2-toggle-wrap {
             display: flex;
@@ -2135,16 +2279,25 @@
                                 <span class="vid-badge live">LIVE</span>
                                 <span class="vid-badge" style="border-color:var(--cyan);color:var(--cyan);">NORTH</span>
                             </div>
+                            <div class="m2-priority-badge" id="m2-pri-North"></div>
                         </div>
                         <div class="m2-tl-panel">
                             <span class="m2-tl-dir">N</span>
-                            <div class="m2-tl-housing">
-                                <div class="m2-tl-light lit-red" id="m2-tl-r-North"></div>
-                                <div class="m2-tl-light" id="m2-tl-y-North"></div>
-                                <div class="m2-tl-light" id="m2-tl-g-North"></div>
+                            <div class="m2-tl-pole"></div>
+                            <div class="m2-tl-body">
+                                <div class="m2-tl-visor"></div>
+                                <div class="m2-tl-bulb-wrap">
+                                    <div class="m2-tl-bulb lit-red" id="m2-tl-r-North"></div>
+                                    <div class="m2-tl-bulb" id="m2-tl-y-North"></div>
+                                    <div class="m2-tl-bulb" id="m2-tl-g-North"></div>
+                                </div>
                             </div>
-                            <span class="m2-count-lbl" id="m2-cnt-North">0</span>
-                            <span class="m2-count-sub">VEH</span>
+                            <div class="m2-tl-countdown-wrap"><div class="m2-tl-countdown-bar" id="m2-cd-North"></div></div>
+                            <div class="m2-tl-stats">
+                                <span class="m2-count-lbl" id="m2-cnt-North">0</span>
+                                <span class="m2-count-sub">VEH</span>
+                            </div>
+                            <div class="m2-tl-load-wrap"><div class="m2-tl-load-bar" id="m2-load-North"></div></div>
                         </div>
                     </div>
                     <!-- WEST tile -->
@@ -2155,16 +2308,25 @@
                                 <span class="vid-badge live">LIVE</span>
                                 <span class="vid-badge" style="border-color:var(--cyan);color:var(--cyan);">WEST</span>
                             </div>
+                            <div class="m2-priority-badge" id="m2-pri-West"></div>
                         </div>
                         <div class="m2-tl-panel">
                             <span class="m2-tl-dir">W</span>
-                            <div class="m2-tl-housing">
-                                <div class="m2-tl-light lit-red" id="m2-tl-r-West"></div>
-                                <div class="m2-tl-light" id="m2-tl-y-West"></div>
-                                <div class="m2-tl-light" id="m2-tl-g-West"></div>
+                            <div class="m2-tl-pole"></div>
+                            <div class="m2-tl-body">
+                                <div class="m2-tl-visor"></div>
+                                <div class="m2-tl-bulb-wrap">
+                                    <div class="m2-tl-bulb lit-red" id="m2-tl-r-West"></div>
+                                    <div class="m2-tl-bulb" id="m2-tl-y-West"></div>
+                                    <div class="m2-tl-bulb" id="m2-tl-g-West"></div>
+                                </div>
                             </div>
-                            <span class="m2-count-lbl" id="m2-cnt-West">0</span>
-                            <span class="m2-count-sub">VEH</span>
+                            <div class="m2-tl-countdown-wrap"><div class="m2-tl-countdown-bar" id="m2-cd-West"></div></div>
+                            <div class="m2-tl-stats">
+                                <span class="m2-count-lbl" id="m2-cnt-West">0</span>
+                                <span class="m2-count-sub">VEH</span>
+                            </div>
+                            <div class="m2-tl-load-wrap"><div class="m2-tl-load-bar" id="m2-load-West"></div></div>
                         </div>
                     </div>
                     <!-- SOUTH tile -->
@@ -2175,16 +2337,25 @@
                                 <span class="vid-badge live">LIVE</span>
                                 <span class="vid-badge" style="border-color:var(--cyan);color:var(--cyan);">SOUTH</span>
                             </div>
+                            <div class="m2-priority-badge" id="m2-pri-South"></div>
                         </div>
                         <div class="m2-tl-panel">
                             <span class="m2-tl-dir">S</span>
-                            <div class="m2-tl-housing">
-                                <div class="m2-tl-light lit-red" id="m2-tl-r-South"></div>
-                                <div class="m2-tl-light" id="m2-tl-y-South"></div>
-                                <div class="m2-tl-light" id="m2-tl-g-South"></div>
+                            <div class="m2-tl-pole"></div>
+                            <div class="m2-tl-body">
+                                <div class="m2-tl-visor"></div>
+                                <div class="m2-tl-bulb-wrap">
+                                    <div class="m2-tl-bulb lit-red" id="m2-tl-r-South"></div>
+                                    <div class="m2-tl-bulb" id="m2-tl-y-South"></div>
+                                    <div class="m2-tl-bulb" id="m2-tl-g-South"></div>
+                                </div>
                             </div>
-                            <span class="m2-count-lbl" id="m2-cnt-South">0</span>
-                            <span class="m2-count-sub">VEH</span>
+                            <div class="m2-tl-countdown-wrap"><div class="m2-tl-countdown-bar" id="m2-cd-South"></div></div>
+                            <div class="m2-tl-stats">
+                                <span class="m2-count-lbl" id="m2-cnt-South">0</span>
+                                <span class="m2-count-sub">VEH</span>
+                            </div>
+                            <div class="m2-tl-load-wrap"><div class="m2-tl-load-bar" id="m2-load-South"></div></div>
                         </div>
                     </div>
                     <!-- EAST tile -->
@@ -2195,16 +2366,25 @@
                                 <span class="vid-badge live">LIVE</span>
                                 <span class="vid-badge" style="border-color:var(--cyan);color:var(--cyan);">EAST</span>
                             </div>
+                            <div class="m2-priority-badge" id="m2-pri-East"></div>
                         </div>
                         <div class="m2-tl-panel">
                             <span class="m2-tl-dir">E</span>
-                            <div class="m2-tl-housing">
-                                <div class="m2-tl-light lit-red" id="m2-tl-r-East"></div>
-                                <div class="m2-tl-light" id="m2-tl-y-East"></div>
-                                <div class="m2-tl-light" id="m2-tl-g-East"></div>
+                            <div class="m2-tl-pole"></div>
+                            <div class="m2-tl-body">
+                                <div class="m2-tl-visor"></div>
+                                <div class="m2-tl-bulb-wrap">
+                                    <div class="m2-tl-bulb lit-red" id="m2-tl-r-East"></div>
+                                    <div class="m2-tl-bulb" id="m2-tl-y-East"></div>
+                                    <div class="m2-tl-bulb" id="m2-tl-g-East"></div>
+                                </div>
                             </div>
-                            <span class="m2-count-lbl" id="m2-cnt-East">0</span>
-                            <span class="m2-count-sub">VEH</span>
+                            <div class="m2-tl-countdown-wrap"><div class="m2-tl-countdown-bar" id="m2-cd-East"></div></div>
+                            <div class="m2-tl-stats">
+                                <span class="m2-count-lbl" id="m2-cnt-East">0</span>
+                                <span class="m2-count-sub">VEH</span>
+                            </div>
+                            <div class="m2-tl-load-wrap"><div class="m2-tl-load-bar" id="m2-load-East"></div></div>
                         </div>
                     </div>
                 </div>

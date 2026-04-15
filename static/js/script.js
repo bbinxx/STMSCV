@@ -1200,32 +1200,91 @@ function loadM2ConfigFromBackend() {
 }
 
 // ─── MODE 2 SIGNAL SYNC (reuses existing poll data) ──────────
+const PRIORITY_LABELS = ['▲ PRIORITY #1', '▲ PRIORITY #2', '▲ PRIORITY #3', 'LOWEST'];
+const PRIORITY_RANK_CLASSES = ['rank-1', 'rank-2', 'rank-3', 'rank-4'];
+
 function updateMode2Visuals(data) {
     if (currentMode !== 2) return;
     const tlStates = data.tl_states || {};
     const m2counts = data.mode2_counts || {};
     const greenLane = data.green_lane;
+    const timer = data.timer || 0;
+    const cycleDuration = data.cycle_duration || 30;
+    const isConn = data.connection === 'Connected';
+
+    // ─── Compute priority ranking by vehicle count ──────────
+    const sortedLanes = [...M2_DIRS].sort((a, b) => {
+        const ca = m2counts[a] || 0, cb = m2counts[b] || 0;
+        return cb - ca;
+    });
+    const rankMap = {};
+    sortedLanes.forEach((lane, i) => { rankMap[lane] = i; });
+
+    // Max count for load bar scaling
+    const maxCount = Math.max(1, ...M2_DIRS.map(l => m2counts[l] || 0));
 
     M2_DIRS.forEach(lane => {
         const state = tlStates[lane] || 'red';
         const count = m2counts[lane] !== undefined ? m2counts[lane] : (data.counts || {})[lane] || 0;
 
-        // Traffic lights in mode 2
+        // ── Realistic TL bulbs (new .m2-tl-bulb elements) ─────
         ['red', 'yellow', 'green'].forEach(s => {
             const el = document.getElementById('m2-tl-' + s[0] + '-' + lane);
-            if (el) el.className = 'm2-tl-light' + (s === state ? ' lit-' + s : '');
+            if (!el) return;
+            el.className = 'm2-tl-bulb' + (s === state ? ' lit-' + s : '');
         });
 
-        // Vehicle count
+        // ── Vehicle count ──────────────────────────────────────
         const cntEl = document.getElementById('m2-cnt-' + lane);
         if (cntEl) cntEl.textContent = count;
 
-        // Tile green-active highlight
+        // ── Tile green-active highlight ────────────────────────
         const tile = document.getElementById('m2-tile-' + lane);
         if (tile) tile.classList.toggle('green-active', lane === greenLane && state === 'green');
+
+        // ── Priority badge ─────────────────────────────────────
+        const badge = document.getElementById('m2-pri-' + lane);
+        if (badge) {
+            const rank = rankMap[lane];
+            const hasVehicles = count > 0;
+            badge.className = 'm2-priority-badge';
+            if (isConn && hasVehicles) {
+                badge.classList.add(PRIORITY_RANK_CLASSES[Math.min(rank, 3)]);
+                badge.textContent = PRIORITY_LABELS[Math.min(rank, 3)];
+                badge.style.display = '';
+            } else if (!isConn && rank === 0) {
+                // Even disconnected, show which lane would be first
+                badge.classList.add('rank-1');
+                badge.textContent = '▲ PRIORITY #1';
+                badge.style.display = '';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+
+        // ── Countdown bar (only for active green lane) ─────────
+        const cdBar = document.getElementById('m2-cd-' + lane);
+        if (cdBar) {
+            if (isConn && lane === greenLane && (state === 'green' || state === 'yellow')) {
+                const pct = Math.min(100, (timer / cycleDuration) * 100);
+                cdBar.style.width = pct + '%';
+                cdBar.className = 'm2-tl-countdown-bar' + (pct < 25 ? ' critical' : (pct < 50 ? ' warn' : ''));
+            } else {
+                cdBar.style.width = '0%';
+                cdBar.className = 'm2-tl-countdown-bar';
+            }
+        }
+
+        // ── Relative traffic load bar ──────────────────────────
+        const loadBar = document.getElementById('m2-load-' + lane);
+        if (loadBar) {
+            const pct = Math.round((count / maxCount) * 100);
+            loadBar.style.width = pct + '%';
+            loadBar.className = 'm2-tl-load-bar' + (pct >= 75 ? ' hi' : (pct >= 40 ? ' med' : ''));
+        }
     });
 
-    // Update Control Mode Button
+    // ── Update Control Mode Button ─────────────────────────────
     const mode = data.control_mode || 1;
     const btn = document.getElementById('m2-mode-toggle');
     if (btn) {
@@ -1238,6 +1297,7 @@ function updateMode2Visuals(data) {
         }
     }
 }
+
 
 window.toggleControlMode = function () {
     const btn = document.getElementById('m2-mode-toggle');
