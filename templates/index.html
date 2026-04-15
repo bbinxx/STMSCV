@@ -10,21 +10,2207 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+    <style>
+        :root {
+            --fs-base: 13px;
+            --sb-width: 72px;
+            --tb-height: 48px;
+            --bg-0: #08090c;
+            --bg-1: #0f1217;
+            --bg-2: #131720;
+            --bg-3: #1a1f2e;
+            --cyan: #00d4f5;
+            --green: #00e87a;
+            --red: #f03050;
+            --yellow: #f5c400;
+            --amber: #ff8c00;
+            --border: #1e2535;
+            --border-hi: #2a3448;
+            --text-dim: #4a5570;
+            --text-mid: #8892a8;
+            --text-bright: #c8d0e0;
+            --text-white: #e8edf5;
+        }
+
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html,
+        body {
+            height: 100%;
+            overflow: hidden;
+            font-size: var(--fs-base);
+            font-family: 'Rajdhani', sans-serif;
+            background: var(--bg-0);
+            color: var(--text-bright);
+        }
+
+
+        /* ===== TOPBAR ===== */
+        #topbar {
+            position: fixed;
+            top: 0;
+            left: var(--sb-width);
+            right: 0;
+            height: var(--tb-height);
+            background: var(--bg-1);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 0;
+            z-index: 100;
+            overflow: hidden;
+        }
+
+        .tb-stat {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            padding: 0 14px;
+            border-right: 1px solid var(--border);
+            height: 100%;
+            min-width: 90px;
+        }
+
+        .tb-stat-label {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 4px);
+            color: var(--text-dim);
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+        }
+
+        .tb-stat-value {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) + 1px);
+            color: var(--cyan);
+            letter-spacing: 0.04em;
+        }
+
+        .tb-stat-value.green {
+            color: var(--green);
+        }
+
+        .tb-stat-value.red {
+            color: var(--red);
+        }
+
+        .tb-stat-value.yellow {
+            color: var(--yellow);
+        }
+
+        .tb-sep {
+            flex: 1;
+        }
+
+        .tb-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 0 12px;
+            border-left: 1px solid var(--border);
+            height: 100%;
+        }
+
+        .tb-fs-label {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 3px);
+            color: var(--text-dim);
+            letter-spacing: 0.1em;
+        }
+
+        .tb-fs-btn {
+            background: var(--bg-2);
+            border: 1px solid var(--border);
+            color: var(--text-mid);
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) + 1px);
+            width: 26px;
+            height: 26px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: border-color 0.15s, color 0.15s;
+        }
+
+        .tb-fs-btn:hover {
+            border-color: var(--cyan);
+            color: var(--cyan);
+        }
+
+        .tb-fs-val {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 2px);
+            color: var(--text-mid);
+            min-width: 32px;
+            text-align: center;
+        }
+
+        .tb-clock {
+            padding: 0 16px;
+            border-left: 1px solid var(--border);
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .tb-clock-time {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) + 2px);
+            color: var(--text-white);
+            letter-spacing: 0.06em;
+        }
+
+        .tb-clock-date {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 4px);
+            color: var(--text-dim);
+            letter-spacing: 0.1em;
+        }
+
+        /* ===== SIDEBAR ===== */
+        #sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            width: var(--sb-width);
+            background: var(--bg-1);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            z-index: 101;
+            overflow: hidden;
+        }
+
+        .sb-brand {
+            width: 100%;
+            height: var(--tb-height);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 1px;
+        }
+
+        .sb-brand-code {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: var(--fs-base);
+            color: var(--cyan);
+            letter-spacing: 0.1em;
+        }
+
+        .sb-brand-sub {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 5px);
+            color: var(--text-dim);
+            letter-spacing: 0.15em;
+        }
+
+        .sb-buttons {
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            padding: 8px 0;
+            flex: 1;
+            overflow-y: auto;
+            scrollbar-width: none;
+        }
+
+        .sb-btn {
+            width: 100%;
+            padding: 10px 0 8px;
+            background: none;
+            border: none;
+            border-left: 3px solid transparent;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 3px;
+            transition: background 0.1s, border-color 0.1s;
+            position: relative;
+        }
+
+        .sb-btn:hover {
+            background: rgba(0, 212, 245, 0.05);
+            border-left-color: var(--cyan);
+        }
+
+        .sb-btn.active {
+            background: rgba(0, 212, 245, 0.08);
+            border-left-color: var(--cyan);
+        }
+
+        .sb-btn.connected {
+            border-left-color: var(--green);
+        }
+
+        .sb-btn-code {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: var(--fs-base);
+            color: var(--text-mid);
+            letter-spacing: 0.06em;
+            transition: color 0.1s;
+        }
+
+        .sb-btn:hover .sb-btn-code,
+        .sb-btn.active .sb-btn-code {
+            color: var(--cyan);
+        }
+
+        .sb-btn.connected .sb-btn-code {
+            color: var(--green);
+        }
+
+        .sb-btn-label {
+            font-family: 'Rajdhani', sans-serif;
+            font-size: calc(var(--fs-base) - 5px);
+            color: var(--text-dim);
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            transition: color 0.1s;
+        }
+
+        .sb-btn:hover .sb-btn-label,
+        .sb-btn.active .sb-btn-label {
+            color: var(--text-mid);
+        }
+
+        .sb-divider {
+            width: 40px;
+            height: 1px;
+            background: var(--border);
+            margin: 4px auto;
+        }
+
+        /* ===== CANVAS AREA ===== */
+        #canvas {
+            position: fixed;
+            top: var(--tb-height);
+            left: var(--sb-width);
+            right: 0;
+            bottom: 0;
+            background:
+                radial-gradient(ellipse at 20% 30%, rgba(0, 212, 245, 0.025) 0%, transparent 55%),
+                radial-gradient(ellipse at 80% 70%, rgba(0, 232, 122, 0.015) 0%, transparent 55%),
+                var(--bg-0);
+            overflow: hidden;
+        }
+
+
+        /* ===== FLOATING WINDOWS ===== */
+        .fwin {
+            position: absolute;
+            background: var(--bg-1);
+            border: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            min-width: 280px;
+            min-height: 150px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 0 0 transparent;
+            transition: box-shadow 0.2s;
+        }
+
+        .fwin.pinned {
+            border-color: var(--cyan);
+            box-shadow: 0 0 0 1px var(--cyan), 0 8px 32px rgba(0, 0, 0, 0.6);
+        }
+
+        .fwin:not(.pinned):hover {
+            border-color: var(--border-hi);
+        }
+
+        .fwin-titlebar {
+            display: flex;
+            align-items: center;
+            background: var(--bg-2);
+            border-bottom: 1px solid var(--border);
+            padding: 0 8px;
+            height: 30px;
+            cursor: grab;
+            user-select: none;
+            flex-shrink: 0;
+        }
+
+        .fwin-titlebar:active {
+            cursor: grabbing;
+        }
+
+        .fwin-title {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 2px);
+            color: var(--text-mid);
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            flex: 1;
+        }
+
+        .fwin-btn {
+            background: none;
+            border: 1px solid transparent;
+            color: var(--text-dim);
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 2px);
+            width: 22px;
+            height: 22px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: border-color 0.1s, color 0.1s, background 0.1s;
+            margin-left: 3px;
+        }
+
+        .fwin-btn.pin-btn:hover {
+            border-color: var(--cyan);
+            color: var(--cyan);
+        }
+
+        .fwin-btn.pin-btn.active {
+            border-color: var(--cyan);
+            color: var(--cyan);
+            background: rgba(0, 212, 245, 0.1);
+        }
+
+        .fwin-btn.close-btn:hover {
+            border-color: var(--red);
+            color: var(--red);
+            background: rgba(240, 48, 80, 0.1);
+        }
+
+        .fwin-body {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 14px;
+            scrollbar-width: thin;
+            scrollbar-color: var(--border) transparent;
+        }
+
+        .fwin-resize {
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 16px;
+            height: 16px;
+            cursor: se-resize;
+            background:
+                linear-gradient(315deg, var(--border) 30%, transparent 30%),
+                linear-gradient(315deg, var(--border) 55%, transparent 55%);
+            background-size: 6px 6px;
+            background-position: 0 0, 4px 4px;
+        }
+
+        /* ===== FORM ELEMENTS ===== */
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            margin-bottom: 12px;
+        }
+
+        .form-label {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 4px);
+            color: var(--text-dim);
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+        }
+
+        .form-input,
+        .form-select {
+            background: #070910;
+            border: 1px solid var(--border);
+            color: var(--text-bright);
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 1px);
+            padding: 7px 10px;
+            width: 100%;
+            outline: none;
+            transition: border-color 0.15s;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+
+        .form-input:focus,
+        .form-select:focus {
+            border-color: var(--cyan);
+        }
+
+        .form-select {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%234a5570'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 10px center;
+            padding-right: 28px;
+            cursor: pointer;
+        }
+
+        .form-grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .form-hint {
+            font-family: 'Rajdhani', sans-serif;
+            font-size: calc(var(--fs-base) - 3px);
+            color: var(--text-dim);
+            font-style: italic;
+            margin-top: 2px;
+        }
+
+        .btn {
+            background: rgba(0, 212, 245, 0.08);
+            border: 1px solid rgba(0, 212, 245, 0.3);
+            color: var(--cyan);
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 2px);
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            padding: 9px 16px;
+            cursor: pointer;
+            width: 100%;
+            transition: background 0.15s, border-color 0.15s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn:hover {
+            background: rgba(0, 212, 245, 0.15);
+            border-color: var(--cyan);
+        }
+
+        .btn:active {
+            background: rgba(0, 212, 245, 0.22);
+        }
+
+        .btn-green {
+            background: rgba(0, 232, 122, 0.08);
+            border-color: rgba(0, 232, 122, 0.3);
+            color: var(--green);
+        }
+
+        .btn-green:hover {
+            background: rgba(0, 232, 122, 0.15);
+            border-color: var(--green);
+        }
+
+        .btn-red {
+            background: rgba(240, 48, 80, 0.08);
+            border-color: rgba(240, 48, 80, 0.3);
+            color: var(--red);
+        }
+
+        .btn-red:hover {
+            background: rgba(240, 48, 80, 0.15);
+            border-color: var(--red);
+        }
+
+        .btn-yellow {
+            background: rgba(245, 196, 0, 0.08);
+            border-color: rgba(245, 196, 0, 0.3);
+            color: var(--yellow);
+        }
+
+        .btn-yellow:hover {
+            background: rgba(245, 196, 0, 0.15);
+            border-color: var(--yellow);
+        }
+
+        .btn-sm {
+            padding: 5px 12px;
+            font-size: calc(var(--fs-base) - 3px);
+        }
+
+        .btn-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        /* ===== SECTION HEADING ===== */
+        .section-head {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 4px);
+            color: var(--text-dim);
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 6px;
+            margin-bottom: 12px;
+            margin-top: 4px;
+        }
+
+        /* ===== STATUS INDICATOR ===== */
+        .status-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 5px 0;
+            border-bottom: 1px solid rgba(30, 37, 53, 0.6);
+        }
+
+        .status-key {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 3px);
+            color: var(--text-dim);
+            letter-spacing: 0.08em;
+        }
+
+        .status-val {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 2px);
+            color: var(--text-bright);
+        }
+
+        .dot {
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            background: var(--text-dim);
+            margin-right: 5px;
+            vertical-align: middle;
+        }
+
+        .dot.green {
+            background: var(--green);
+            box-shadow: 0 0 6px var(--green);
+        }
+
+        .dot.red {
+            background: var(--red);
+            box-shadow: 0 0 6px var(--red);
+        }
+
+        .dot.yellow {
+            background: var(--yellow);
+        }
+
+        .dot.cyan {
+            background: var(--cyan);
+            box-shadow: 0 0 6px var(--cyan);
+        }
+
+        /* ===== LANE COUNT CARDS ===== */
+        .lane-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .lane-card {
+            background: var(--bg-2);
+            border: 1px solid var(--border);
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2px;
+            transition: border-color 0.3s;
+        }
+
+        .lane-card.active {
+            border-color: var(--green);
+        }
+
+        .lane-num {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) + 15px);
+            color: var(--cyan);
+            line-height: 1;
+        }
+
+        .lane-card.active .lane-num {
+            color: var(--green);
+        }
+
+        .lane-lbl {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 4px);
+            color: var(--text-dim);
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+        }
+
+        /* ===== PHASE TIMER ===== */
+        .phase-bar-wrap {
+            margin-bottom: 12px;
+        }
+
+        .phase-bar-head {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+        }
+
+        .phase-bar-label {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 4px);
+            color: var(--text-dim);
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+        }
+
+        .phase-bar-val {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 3px);
+            color: var(--yellow);
+        }
+
+        .phase-bar-track {
+            height: 4px;
+            background: var(--bg-2);
+            border: 1px solid var(--border);
+            overflow: hidden;
+        }
+
+        .phase-bar-fill {
+            height: 100%;
+            background: var(--yellow);
+            transition: width 0.5s linear;
+            width: 60%;
+        }
+
+        /* ===== TABLE ===== */
+        .hmi-table-wrap {
+            max-height: 240px;
+            overflow-y: auto;
+            border: 1px solid var(--border);
+        }
+
+        .hmi-table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+        }
+
+        .hmi-table thead tr {
+            background: var(--bg-2);
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+
+        .hmi-table th {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 4px);
+            color: var(--text-dim);
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            padding: 7px 8px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+            border-right: 1px solid var(--border);
+        }
+
+        .hmi-table td {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 3px);
+            color: var(--text-mid);
+            padding: 5px 8px;
+            border-bottom: 1px solid rgba(30, 37, 53, 0.5);
+            border-right: 1px solid rgba(30, 37, 53, 0.3);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .hmi-table tbody tr:hover td {
+            background: rgba(0, 212, 245, 0.04);
+            color: var(--text-bright);
+        }
+
+        /* ===== API ENDPOINT ===== */
+        .api-row {
+            background: #070910;
+            border: 1px solid var(--border);
+            padding: 7px 10px;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 3px);
+            color: var(--cyan);
+            word-break: break-all;
+            margin-bottom: 8px;
+        }
+
+        /* ===== ROI CANVAS ===== */
+        .roi-wrap {
+            position: relative;
+            background: #000;
+            border: 1px solid var(--border);
+            margin-bottom: 10px;
+            overflow: hidden;
+            width: 100%;
+            height: auto;
+            min-height: 200px;
+        }
+
+        #roi-img {
+            display: block;
+            width: 100%;
+            height: auto;
+        }
+
+        #roi-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            cursor: crosshair;
+            z-index: 5;
+            display: block;
+        }
+
+        /* TL MAPPING STYLES */
+        .tl-mapping-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .tl-map-row {
+            display: flex;
+            align-items: flex-end;
+            gap: 10px;
+            padding: 8px;
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 4px;
+        }
+
+        .tl-test-btns {
+            display: flex;
+            gap: 4px;
+        }
+
+        .tbtn {
+            width: 28px;
+            height: 28px;
+            border-radius: 4px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: #222;
+            color: #fff;
+            cursor: pointer;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 11px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: 0.2s;
+        }
+
+        .tbtn-r:hover {
+            background: var(--red);
+            color: white;
+            border-color: var(--red);
+        }
+
+        .tbtn-y:hover {
+            background: var(--yellow);
+            color: black;
+            border-color: var(--yellow);
+        }
+
+        .tbtn-g:hover {
+            background: var(--green);
+            color: black;
+            border-color: var(--green);
+        }
+
+        /* ===== TRAFFIC LIGHT VISUAL ===== */
+        .tl-visual {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+        }
+
+        .tl-unit {
+            background: var(--bg-2);
+            border: 1px solid var(--border);
+            padding: 8px 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            flex: 1;
+            min-width: 60px;
+        }
+
+        .tl-lights {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            align-items: center;
+        }
+
+        .tl-light {
+            width: 14px;
+            height: 14px;
+            border: 1px solid var(--border);
+            background: #111;
+        }
+
+        .tl-light.lit-red {
+            background: var(--red);
+            box-shadow: 0 0 8px var(--red);
+        }
+
+        .tl-light.lit-yellow {
+            background: var(--yellow);
+            box-shadow: 0 0 8px var(--yellow);
+        }
+
+        .tl-light.lit-green {
+            background: var(--green);
+            box-shadow: 0 0 8px var(--green);
+        }
+
+        .tl-name {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 4px);
+            color: var(--text-dim);
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+        }
+
+        .tl-id {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 5px);
+            color: var(--text-dim);
+        }
+
+        /* ===== TOAST ===== */
+        #toast-container {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 9000;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            pointer-events: none;
+        }
+
+        .toast {
+            background: var(--bg-2);
+            border: 1px solid var(--cyan);
+            border-left-width: 3px;
+            padding: 9px 14px;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 2px);
+            color: var(--text-bright);
+            max-width: 320px;
+            opacity: 0;
+            transform: translateX(20px);
+            transition: opacity 0.2s, transform 0.2s;
+            pointer-events: none;
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        .toast.toast-green {
+            border-color: var(--green);
+        }
+
+        .toast.toast-red {
+            border-color: var(--red);
+        }
+
+        .toast.toast-yellow {
+            border-color: var(--yellow);
+        }
+
+        /* ===== SCROLLBARS ===== */
+        ::-webkit-scrollbar {
+            width: 4px;
+            height: 4px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border);
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--border-hi);
+        }
+
+        /* ===== VIDEO FEED ===== */
+        .video-wrap {
+            background: #000;
+            border: 1px solid var(--border);
+            margin-bottom: 10px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .video-wrap img {
+            display: block;
+            width: 100%;
+            height: auto;
+        }
+
+        .video-overlay {
+            position: absolute;
+            top: 6px;
+            left: 6px;
+            display: flex;
+            gap: 4px;
+        }
+
+        .vid-badge {
+            background: rgba(8, 9, 12, 0.8);
+            border: 1px solid var(--red);
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 4px);
+            color: var(--red);
+            padding: 2px 6px;
+            letter-spacing: 0.1em;
+        }
+
+        .vid-badge.live {
+            border-color: var(--green);
+            color: var(--green);
+        }
+
+        /* ===== MODE SWITCHER ===== */
+        .mode-tabs {
+            display: flex;
+            align-items: center;
+            gap: 0;
+            border-left: 1px solid var(--border);
+            height: 100%;
+        }
+
+        .mode-tab {
+            height: 100%;
+            padding: 0 18px;
+            background: none;
+            border: none;
+            border-right: 1px solid var(--border);
+            border-bottom: 2px solid transparent;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 2px);
+            color: var(--text-dim);
+            letter-spacing: 0.1em;
+            cursor: pointer;
+            transition: color 0.15s, border-color 0.15s, background 0.15s;
+        }
+
+        .mode-tab:hover {
+            color: var(--cyan);
+            background: rgba(0, 212, 245, 0.04);
+        }
+
+        .mode-tab.active {
+            color: var(--cyan);
+            border-bottom-color: var(--cyan);
+            background: rgba(0, 212, 245, 0.07);
+        }
+
+        /* ===== MODE 2 PANEL ===== */
+        #mode2-panel {
+            display: none;
+            position: fixed;
+            top: var(--tb-height);
+            left: var(--sb-width);
+            right: 0;
+            bottom: 0;
+            flex-direction: column;
+            background:
+                radial-gradient(ellipse at 20% 30%, rgba(0, 212, 245, 0.025) 0%, transparent 55%),
+                radial-gradient(ellipse at 80% 70%, rgba(0, 232, 122, 0.015) 0%, transparent 55%),
+                var(--bg-0);
+            overflow: hidden;
+            z-index: 50;
+        }
+
+        #mode2-panel.active {
+            display: flex;
+        }
+
+        /* Tab bar inside Mode 2 */
+        .m2-tabs {
+            display: flex;
+            align-items: center;
+            background: var(--bg-1);
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+
+        .m2-tab {
+            padding: 10px 22px;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 2px);
+            color: var(--text-dim);
+            letter-spacing: 0.12em;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: color 0.15s, border-color 0.15s;
+            user-select: none;
+        }
+
+        .m2-tab.active {
+            color: var(--cyan);
+            border-bottom-color: var(--cyan);
+        }
+
+        .m2-tab:hover {
+            color: var(--text-bright);
+        }
+
+        .m2-tab-sep {
+            flex: 1;
+        }
+
+        .m2-save-btn {
+            margin-right: 14px;
+            background: rgba(0, 232, 122, 0.08);
+            border: 1px solid rgba(0, 232, 122, 0.3);
+            color: var(--green);
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 3px);
+            padding: 5px 16px;
+            letter-spacing: 0.1em;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+
+        .m2-save-btn:hover {
+            background: rgba(0, 232, 122, 0.18);
+        }
+
+        /* Config section */
+        .m2-content {
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .m2-section {
+            display: none;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+        }
+
+        .m2-section.active {
+            display: flex;
+        }
+
+        /* Config cards grid */
+        .m2-config-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: 1fr 1fr;
+            gap: 14px;
+            padding: 16px;
+            width: 100%;
+            height: 100%;
+            box-sizing: border-box;
+        }
+
+        .m2-dir-card {
+            background: var(--bg-1);
+            border: 1px solid var(--border);
+            display: none;
+            flex-direction: column;
+            overflow: hidden;
+            transition: border-color 0.2s;
+            width: 100%;
+            height: 100%;
+        }
+
+        .m2-dir-card.active {
+            display: flex;
+        }
+
+        .m2-config-container {
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            height: 100%;
+            padding: 16px;
+            box-sizing: border-box;
+            gap: 12px;
+        }
+
+        .m2-subtabs {
+            display: flex;
+            gap: 4px;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 2px;
+        }
+
+        .m2-subtab {
+            background: var(--bg-2);
+            border: 1px solid var(--border);
+            border-bottom: none;
+            color: var(--text-dim);
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 2px);
+            padding: 6px 20px;
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+            top: 1px;
+        }
+
+        .m2-subtab:hover {
+            color: var(--text-mid);
+            background: var(--bg-3);
+        }
+
+        .m2-subtab.active {
+            background: var(--bg-1);
+            color: var(--cyan);
+            border-color: var(--border-hi);
+            border-bottom: 1px solid var(--bg-1);
+            z-index: 2;
+        }
+
+        .m2-config-viewport {
+            flex: 1;
+            min-height: 0;
+            background: var(--bg-2);
+            border: 1px solid var(--border);
+            position: relative;
+        }
+
+        .m2-dir-card:hover {
+            border-color: var(--border-hi);
+        }
+
+        .m2-dir-card.configured {
+            border-color: rgba(0, 212, 245, 0.35);
+        }
+
+        .m2-card-head {
+            display: flex;
+            align-items: center;
+            padding: 8px 12px;
+            background: var(--bg-2);
+            border-bottom: 1px solid var(--border);
+            gap: 10px;
+            flex-shrink: 0;
+        }
+
+        .m2-dir-badge {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) + 1px);
+            color: var(--cyan);
+            letter-spacing: 0.1em;
+            min-width: 60px;
+        }
+
+        .m2-card-src-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex: 1;
+        }
+
+        .m2-src-input {
+            flex: 1;
+            background: #070910;
+            border: 1px solid var(--border);
+            color: var(--text-bright);
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 2px);
+            padding: 5px 8px;
+            outline: none;
+            transition: border-color 0.15s;
+        }
+
+        .m2-src-input:focus {
+            border-color: var(--cyan);
+        }
+
+        .m2-src-input::placeholder {
+            color: var(--text-dim);
+        }
+
+        .m2-apply-btn {
+            background: rgba(0, 212, 245, 0.08);
+            border: 1px solid rgba(0, 212, 245, 0.3);
+            color: var(--cyan);
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 3px);
+            padding: 5px 12px;
+            cursor: pointer;
+            letter-spacing: 0.08em;
+            white-space: nowrap;
+            transition: background 0.15s;
+        }
+
+        .m2-apply-btn:hover {
+            background: rgba(0, 212, 245, 0.18);
+        }
+
+        .m2-card-preview {
+            flex: 1;
+            background: #000;
+            position: relative;
+            min-height: 0;
+            overflow: hidden;
+        }
+
+        .m2-card-preview img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            display: block;
+        }
+
+        .m2-prev-badge {
+            position: absolute;
+            top: 6px;
+            left: 6px;
+            background: rgba(8, 9, 12, 0.8);
+            border: 1px solid var(--border);
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 4px);
+            color: var(--text-dim);
+            padding: 2px 6px;
+            letter-spacing: 0.08em;
+        }
+
+        .m2-prev-badge.live {
+            border-color: var(--green);
+            color: var(--green);
+        }
+
+        .m2-src-hint {
+            font-family: 'Rajdhani', sans-serif;
+            font-size: calc(var(--fs-base) - 4px);
+            color: var(--text-dim);
+            padding: 3px 12px 6px;
+            flex-shrink: 0;
+        }
+
+        /* ROI toolbar strip */
+        .m2-roi-bar {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 12px;
+            background: var(--bg-2);
+            border-top: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+
+        .m2-roi-label {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 4px);
+            color: var(--text-dim);
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            flex: 1;
+        }
+
+        .m2-roi-status {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 4px);
+            color: var(--yellow);
+            letter-spacing: 0.08em;
+            min-width: 120px;
+            text-align: center;
+        }
+
+        .m2-roi-btn {
+            background: none;
+            border: 1px solid var(--border);
+            color: var(--text-dim);
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 4px);
+            padding: 3px 10px;
+            cursor: pointer;
+            letter-spacing: 0.08em;
+            transition: border-color 0.15s, color 0.15s, background 0.15s;
+            white-space: nowrap;
+        }
+
+        .m2-roi-btn:hover {
+            border-color: var(--cyan);
+            color: var(--cyan);
+        }
+
+        .m2-roi-btn.active {
+            border-color: var(--yellow);
+            color: var(--yellow);
+            background: rgba(245, 196, 0, 0.08);
+        }
+
+        .m2-roi-btn.save {
+            border-color: rgba(0, 232, 122, 0.4);
+            color: var(--green);
+        }
+
+        .m2-roi-btn.save:hover {
+            background: rgba(0, 232, 122, 0.12);
+        }
+
+        .m2-roi-btn.clr {
+            border-color: rgba(240, 48, 80, 0.4);
+            color: var(--red);
+        }
+
+        .m2-roi-btn.clr:hover {
+            background: rgba(240, 48, 80, 0.12);
+        }
+
+        /* ROI canvas on top of preview feed */
+        .m2-card-preview canvas.m2-roi-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            cursor: crosshair;
+            z-index: 10;
+            display: none;
+            /* shown only when draw mode active */
+        }
+
+        .m2-card-preview canvas.m2-roi-canvas.drawing {
+            display: block;
+        }
+
+        /* Main view grid */
+        .m2-main-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: 1fr 1fr;
+            gap: 10px;
+            padding: 12px;
+            width: 100%;
+            height: 100%;
+            box-sizing: border-box;
+        }
+
+        .m2-feed-tile {
+            background: var(--bg-1);
+            border: 1px solid var(--border);
+            display: flex;
+            flex-direction: row;
+            overflow: hidden;
+            transition: border-color 0.3s;
+        }
+
+        .m2-feed-tile.green-active {
+            border-color: var(--green);
+            box-shadow: 0 0 12px rgba(0, 232, 122, 0.15);
+        }
+
+        .m2-feed-video {
+            flex: 1;
+            background: #000;
+            position: relative;
+            min-width: 0;
+        }
+
+        .m2-feed-video img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .m2-feed-overlay {
+            position: absolute;
+            top: 6px;
+            left: 6px;
+            display: flex;
+            gap: 4px;
+        }
+
+        .m2-tl-panel {
+            width: 72px;
+            background: var(--bg-2);
+            border-left: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            flex-shrink: 0;
+            padding: 10px 0;
+        }
+
+        .m2-tl-dir {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 3px);
+            color: var(--text-dim);
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+        }
+
+        .m2-tl-housing {
+            background: #0a0a0a;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 8px 6px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            align-items: center;
+        }
+
+        .m2-tl-light {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: #111;
+            transition: background 0.25s, box-shadow 0.25s;
+        }
+
+        .m2-tl-light.lit-red {
+            background: var(--red);
+            box-shadow: 0 0 10px var(--red);
+        }
+
+        .m2-tl-light.lit-yellow {
+            background: var(--yellow);
+            box-shadow: 0 0 10px var(--yellow);
+        }
+
+        .m2-tl-light.lit-green {
+            background: var(--green);
+            box-shadow: 0 0 10px var(--green);
+        }
+
+        .m2-toggle-wrap {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 0 16px;
+        }
+
+        .m2-toggle-label {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 3px);
+            color: var(--text-dim);
+            letter-spacing: 0.1em;
+        }
+
+        .m2-mode-btn {
+            background: rgba(0, 212, 245, 0.1);
+            border: 1px solid var(--cyan);
+            color: var(--cyan);
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 2px);
+            padding: 4px 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            min-width: 120px;
+        }
+
+        .m2-mode-btn:hover {
+            background: var(--cyan);
+            color: var(--bg-1);
+        }
+
+        .m2-mode-btn.rush {
+            border-color: var(--amber);
+            color: var(--amber);
+            background: rgba(255, 140, 0, 0.1);
+        }
+
+        .m2-mode-btn.rush:hover {
+            background: var(--amber);
+            color: var(--bg-1);
+        }
+
+        /* ===== RESPONSIVE ===== */
+        @media (max-width: 600px) {
+            :root {
+                --fs-base: 11px;
+            }
+
+            .sb-btn-label {
+                display: none;
+            }
+        }
+
+        @media (max-width: 400px) {
+            :root {
+                --fs-base: 10px;
+            }
+        }
+    </style>
 </head>
 
 <body>
 
-    {% include 'components/sidebar.html' %}
+    <!-- SIDEBAR -->
+    <nav id="sidebar">
+        <div class="sb-brand">
+            <span class="sb-brand-code">HMI</span>
+            <span class="sb-brand-sub">v2.4.1</span>
+        </div>
+        <div class="sb-buttons">
+            <button class="sb-btn" id="sb-dash" data-win="win-dashboard">
+                <span class="sb-btn-code">DSH</span>
+                <span class="sb-btn-label">Dashboard</span>
+            </button>
+            <button class="sb-btn" id="sb-conn" data-win="win-connection">
+                <span class="sb-btn-code">CON</span>
+                <span class="sb-btn-label">Connection</span>
+            </button>
+            <div class="sb-divider"></div>
+            <button class="sb-btn" id="sb-roi" data-win="win-roi">
+                <span class="sb-btn-code">ROI</span>
+                <span class="sb-btn-label">Zones</span>
+            </button>
+            <button class="sb-btn" id="sb-tl" data-win="win-tl">
+                <span class="sb-btn-code">TRL</span>
+                <span class="sb-btn-label">Traf.Lts</span>
+            </button>
+            <div class="sb-divider"></div>
+            <button class="sb-btn" id="sb-live" data-win="win-live">
+                <span class="sb-btn-code">LIV</span>
+                <span class="sb-btn-label">Live Feed</span>
+            </button>
+            <div class="sb-divider"></div>
+            <button class="sb-btn" id="sb-mode2">
+                <span class="sb-btn-code">M2</span>
+                <span class="sb-btn-label">Multi-Cam</span>
+            </button>
+        </div>
+    </nav>
 
-    {% include 'components/topbar.html' %}
+    <!-- TOPBAR -->
+    <header id="topbar">
+        <div class="tb-stat">
+            <span class="tb-stat-label">CONTROLLER STATUS</span>
+            <span class="tb-stat-value red" id="tb-control-status">OFFLINE</span>
+        </div>
+        <div class="tb-stat">
+            <span class="tb-stat-label">PHASE LANE</span>
+            <span class="tb-stat-value yellow" id="tb-phase-lane">--</span>
+        </div>
+        <div class="tb-stat">
+            <span class="tb-stat-label">CYCLE TIMER</span>
+            <span class="tb-stat-value" id="tb-cycle-timer">--s</span>
+        </div>
+        <div class="tb-stat">
+            <span class="tb-stat-label">TOTAL VEHICLES</span>
+            <span class="tb-stat-value" id="tb-total-veh">0</span>
+        </div>
+        <div class="tb-stat">
+            <span class="tb-stat-label">HOST</span>
+            <span class="tb-stat-value" id="tb-host" style="font-size:11px">localhost:2000</span>
+        </div>
+        <div class="tb-sep"></div>
+        <!-- MODE SWITCHER -->
+        <div class="mode-tabs">
+            <button class="mode-tab active" id="mode-tab-1" onclick="switchMode(1)">MODE 1</button>
+            <button class="mode-tab" id="mode-tab-2" onclick="switchMode(2)">MODE 2</button>
+        </div>
+        <div class="tb-controls">
+            <span class="tb-fs-label">FS</span>
+            <button class="tb-fs-btn" id="fs-dec">-</button>
+            <span class="tb-fs-val" id="fs-val">13</span>
+            <button class="tb-fs-btn" id="fs-inc">+</button>
+        </div>
+        <div class="tb-clock">
+            <span class="tb-clock-time" id="tb-time">--:--:--</span>
+            <span class="tb-clock-date" id="tb-date">----/--/--</span>
+        </div>
+    </header>
 
     <!-- CANVAS AREA -->
     <div id="canvas">
-        {% include 'components/connection.html' %}
+
+        <!-- WINDOW: Dashboard -->
+        <div class="fwin" id="win-dashboard" style="width:420px; top:30px; left:30px;">
+            <div class="fwin-titlebar">
+                <span class="fwin-title">[ TRAFFIC / DASHBOARD ]</span>
+                <button class="fwin-btn pin-btn" title="Pin">P</button>
+                <button class="fwin-btn close-btn" title="Close">X</button>
+            </div>
+            <div class="fwin-body">
+                <div class="section-head">LANE VEHICLE COUNTS</div>
+                <div class="lane-grid">
+                    <div class="lane-card" id="lane-card-North">
+                        <span class="lane-num" id="count-North">0</span>
+                        <span class="lane-lbl">NORTH</span>
+                    </div>
+                    <div class="lane-card" id="lane-card-South">
+                        <span class="lane-num" id="count-South">0</span>
+                        <span class="lane-lbl">SOUTH</span>
+                    </div>
+                    <div class="lane-card" id="lane-card-East">
+                        <span class="lane-num" id="count-East">0</span>
+                        <span class="lane-lbl">EAST</span>
+                    </div>
+                    <div class="lane-card" id="lane-card-West">
+                        <span class="lane-num" id="count-West">0</span>
+                        <span class="lane-lbl">WEST</span>
+                    </div>
+                </div>
+                <div class="section-head">PHASE TIMER</div>
+                <div class="phase-bar-wrap">
+                    <div class="phase-bar-head">
+                        <span class="phase-bar-label">CURRENT PHASE: <span id="ph-lane">--</span></span>
+                        <span class="phase-bar-val" id="ph-timer">--s</span>
+                    </div>
+                    <div class="phase-bar-track">
+                        <div class="phase-bar-fill" id="ph-bar" style="width:0%"></div>
+                    </div>
+                </div>
+                <div class="section-head">SYSTEM STATUS</div>
+                <div>
+                    <div class="status-row">
+                        <span class="status-key">CONTROLLER API</span>
+                        <span class="status-val"><span class="dot red" id="dot-control"></span><span
+                                id="stat-control">OFFLINE</span></span>
+                    </div>
+                    <div class="status-row">
+                        <span class="status-key">DETECTION</span>
+                        <span class="status-val"><span class="dot" id="dot-detect"></span><span
+                                id="stat-detect">INACTIVE</span></span>
+                    </div>
+                    <div class="status-row">
+                        <span class="status-key">LIVE FEED</span>
+                        <span class="status-val"><span class="dot" id="dot-feed"></span><span id="stat-feed">NO
+                                SIGNAL</span></span>
+                    </div>
+                    <div class="status-row">
+                        <span class="status-key">CONTROLLER</span>
+                        <span class="status-val"><span class="dot yellow" id="dot-ctrl"></span><span
+                                id="stat-ctrl">STANDBY</span></span>
+                    </div>
+                </div>
+            </div>
+            <div class="fwin-resize"></div>
+        </div>
+
+        <!-- WINDOW: Connection -->
+        <div class="fwin" id="win-connection" style="width:340px; top:30px; left:480px; display:none;">
+            <div class="fwin-titlebar">
+                <span class="fwin-title">[ CONNECTION / SETTINGS ]</span>
+                <button class="fwin-btn pin-btn" title="Pin">P</button>
+                <button class="fwin-btn close-btn" title="Close">X</button>
+            </div>
+            <div class="fwin-body">
+                <div class="section-head">FLASK SERVER</div>
+                <div class="form-grid-2">
+                    <div class="form-group">
+                        <label class="form-label">FLASK HOST</label>
+                        <input type="text" class="form-input" id="cfg-flask-host" placeholder="0.0.0.0">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">FLASK PORT</label>
+                        <input type="number" class="form-input" id="cfg-flask-port" placeholder="5050">
+                    </div>
+                </div>
+                <div class="section-head">TRAFFIC INPUTS & WORKFLOW</div>
+                <div class="form-group">
+                    <label class="form-label">CYCLE TIMER (S)</label>
+                    <input type="number" class="form-input" id="cfg-cycle-timer" placeholder="30" min="5">
+                    <small class="text-dim">Set how long each green phase should run (for automated mode).</small>
+                </div>
+                <div class="section-head">CONTROLLER API</div>
+                <div class="form-group">
+                    <label class="form-label">CONTROLLER HOST</label>
+                    <input type="text" class="form-input" id="cfg-controller-host" placeholder="127.0.0.1">
+                </div>
+                <div class="form-grid-2">
+                    <div class="form-group">
+                        <label class="form-label">CONTROLLER PORT</label>
+                        <input type="number" class="form-input" id="cfg-controller-port" placeholder="2000">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">TIMEOUT (S)</label>
+                        <input type="number" class="form-input" id="cfg-timeout" step="0.1" placeholder="3">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <button class="btn btn-cyan" id="btn-test-api" type="button">TEST CONTROLLER API</button>
+                </div>
+                <div class="section-head">MODE 2 CAMERA MAPPING</div>
+                <div class="form-group">
+                    <label class="form-label">PASTE MULTI-CAM LINKS (one per line, optional direction prefix e.g. North=https://...)</label>
+                    <textarea class="form-input" id="cfg-mode2-links" style="height:90px; font-family: monospace; resize:vertical;"></textarea>
+                </div>
+                <div class="form-grid-2">
+                    <div class="form-group">
+                        <label class="form-label">NORTH SOURCE</label>
+                        <input type="text" class="form-input" id="mode2-north" placeholder="e.g. rtsp://...">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">SOUTH SOURCE</label>
+                        <input type="text" class="form-input" id="mode2-south" placeholder="e.g. rtsp://...">
+                    </div>
+                </div>
+                <div class="form-grid-2">
+                    <div class="form-group">
+                        <label class="form-label">EAST SOURCE</label>
+                        <input type="text" class="form-input" id="mode2-east" placeholder="e.g. rtsp://...">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">WEST SOURCE</label>
+                        <input type="text" class="form-input" id="mode2-west" placeholder="e.g. rtsp://...">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <button class="btn btn-cyan" id="btn-apply-mode2-links" type="button">APPLY MODE2 LINKS</button>
+                </div>
+                <div class="section-head">DETECTION MODEL</div>
+                <div class="form-group">
+                    <label class="form-label">YOLO MODEL PATH</label>
+                    <input type="text" class="form-input" id="cfg-yolo" placeholder="yolov8n.pt">
+                </div>
+                <div style="margin-top:20px; display:flex; flex-direction:column; gap:8px;">
+                    <button class="btn btn-yellow" id="btn-save-only">SAVE CONFIG</button>
+                    <button class="btn btn-green" id="btn-toggle-connect">CONNECT</button>
+                    <button class="btn btn-cyan" id="btn-start-system">START SYSTEM</button>
+                    <button class="btn btn-red" id="btn-stop-system">STOP SYSTEM</button>
+                </div>
+                <div class="form-hint" style="margin-top:10px; text-align:center;">
+                    SERVER RUNNING ON PORT 5050
+                </div>
+            </div>
+            <div class="fwin-resize"></div>
+        </div>
+
+        <!-- WINDOW: ROI Setup -->
+        <div class="fwin" id="win-roi" style="width:720px; top:80px; left:100px; display:none;">
+            <div class="fwin-titlebar">
+                <span class="fwin-title">[ ROI / ZONE SETUP ]</span>
+                <button class="fwin-btn pin-btn" title="Pin">P</button>
+                <button class="fwin-btn close-btn" title="Close">X</button>
+            </div>
+            <div class="fwin-body" style="display:flex; gap:14px; padding:0;">
+                <!-- Left Sidebar: Saved Sets -->
+                <div
+                    style="width:180px; background:var(--bg-2); border-right:1px solid var(--border); display:flex; flex-direction:column;">
+                    <div class="section-head" style="padding:10px 14px 4px; margin-bottom:4px;">SAVED SETS</div>
+                    <div id="roi-sets-list" style="flex:1; overflow-y:auto; padding:6px 14px;">
+                        <span class="form-hint">No saved sets...</span>
+                    </div>
+                    <div style="padding:10px; border-top:1px solid var(--border);">
+                        <button class="btn btn-yellow btn-sm" id="roi-load-btn">LOAD SET</button>
+                    </div>
+                </div>
+
+                <!-- Main Content -->
+                <div style="flex:1; padding:14px;">
+                    <div style="display:flex; gap:10px; align-items:flex-end; margin-bottom:12px;">
+                        <div style="flex:2;">
+                            <label class="form-label">SET NAME</label>
+                            <input type="text" class="form-input" id="roi-set-name" placeholder="Intersection_01">
+                        </div>
+                        <div style="flex:1;">
+                            <label class="form-label">LANE</label>
+                            <select class="form-select" id="roi-lane">
+                                <option>North</option>
+                                <option>South</option>
+                                <option>East</option>
+                                <option>West</option>
+                            </select>
+                        </div>
+                        <div style="display:flex; gap:6px;">
+                            <label
+                                style="display:flex; align-items:center; gap:4px; font-family:'Share Tech Mono', monospace; font-size:12px; color:var(--text-bright); cursor:pointer;">
+                                <input type="checkbox" id="roi-enable-cb" checked>
+                                ENABLE
+                            </label>
+                            <button class="btn btn-red btn-sm" id="roi-clear-btn">CLEAR</button>
+                            <button class="btn btn-green btn-sm" id="roi-save-btn">SAVE ROI</button>
+                        </div>
+                    </div>
+
+                    <div class="roi-wrap">
+                        <img id="roi-img" src="" alt="Live Feed Preview">
+                        <canvas id="roi-canvas"></canvas>
+                        <div class="video-overlay">
+                            <div class="vid-badge" id="roi-status">READY</div>
+                        </div>
+                    </div>
+
+                    <div style="margin-top:10px; display:flex; justify-content:flex-end;">
+                        <button class="btn btn-green btn-sm" style="width:auto;" id="roi-save-set-btn">SAVE ENTIRE SET
+                            TO DB</button>
+                    </div>
+                </div>
+            </div>
+            <div class="fwin-resize"></div>
+        </div>
+
+        <!-- WINDOW: Traffic Lights -->
+        <div class="fwin" id="win-tl" style="width:360px; top:80px; left:480px; display:none;">
+            <div class="fwin-titlebar">
+                <span class="fwin-title">[ TRAFFIC LIGHTS / MAPPING ]</span>
+                <button class="fwin-btn pin-btn" title="Pin">P</button>
+                <button class="fwin-btn close-btn" title="Close">X</button>
+            </div>
+            <div class="fwin-body">
+                <div class="section-head">VISUAL STATE</div>
+                <div class="tl-visual">
+                    <div class="tl-unit" id="tl-vis-North">
+                        <div class="tl-lights">
+                            <div class="tl-light lit-red" id="tl-r-North"></div>
+                            <div class="tl-light" id="tl-y-North"></div>
+                            <div class="tl-light" id="tl-g-North"></div>
+                        </div>
+                        <span class="tl-name">NORTH</span>
+                        <span class="tl-id" id="tl-id-North">--</span>
+                    </div>
+                    <div class="tl-unit" id="tl-vis-South">
+                        <div class="tl-lights">
+                            <div class="tl-light lit-red" id="tl-r-South"></div>
+                            <div class="tl-light" id="tl-y-South"></div>
+                            <div class="tl-light" id="tl-g-South"></div>
+                        </div>
+                        <span class="tl-name">SOUTH</span>
+                        <span class="tl-id" id="tl-id-South">--</span>
+                    </div>
+                    <div class="tl-unit" id="tl-vis-East">
+                        <div class="tl-lights">
+                            <div class="tl-light lit-red" id="tl-r-East"></div>
+                            <div class="tl-light" id="tl-y-East"></div>
+                            <div class="tl-light" id="tl-g-East"></div>
+                        </div>
+                        <span class="tl-name">EAST</span>
+                        <span class="tl-id" id="tl-id-East">--</span>
+                    </div>
+                    <div class="tl-unit" id="tl-vis-West">
+                        <div class="tl-lights">
+                            <div class="tl-light lit-red" id="tl-r-West"></div>
+                            <div class="tl-light" id="tl-y-West"></div>
+                            <div class="tl-light" id="tl-g-West"></div>
+                        </div>
+                        <span class="tl-name">WEST</span>
+                        <span class="tl-id" id="tl-id-West">--</span>
+                    </div>
+                </div>
+                <div class="section-head">ACTOR ID MAPPING & TEST</div>
+                <div class="tl-mapping-list">
+                    <!-- North -->
+                    <div class="tl-map-row">
+                        <div style="flex:1;">
+                            <label class="form-label">NORTH ID</label>
+                            <input type="number" class="form-input" id="tl-north" placeholder="ID">
+                        </div>
+                        <div class="tl-test-btns">
+                            <button class="tbtn tbtn-r" onclick="testTL('North','red')">R</button>
+                            <button class="tbtn tbtn-y" onclick="testTL('North','yellow')">Y</button>
+                            <button class="tbtn tbtn-g" onclick="testTL('North','green')">G</button>
+                        </div>
+                    </div>
+                    <!-- South -->
+                    <div class="tl-map-row">
+                        <div style="flex:1;">
+                            <label class="form-label">SOUTH ID</label>
+                            <input type="number" class="form-input" id="tl-south" placeholder="ID">
+                        </div>
+                        <div class="tl-test-btns">
+                            <button class="tbtn tbtn-r" onclick="testTL('South','red')">R</button>
+                            <button class="tbtn tbtn-y" onclick="testTL('South','yellow')">Y</button>
+                            <button class="tbtn tbtn-g" onclick="testTL('South','green')">G</button>
+                        </div>
+                    </div>
+                    <!-- East -->
+                    <div class="tl-map-row">
+                        <div style="flex:1;">
+                            <label class="form-label">EAST ID</label>
+                            <input type="number" class="form-input" id="tl-east" placeholder="ID">
+                        </div>
+                        <div class="tl-test-btns">
+                            <button class="tbtn tbtn-r" onclick="testTL('East','red')">R</button>
+                            <button class="tbtn tbtn-y" onclick="testTL('East','yellow')">Y</button>
+                            <button class="tbtn tbtn-g" onclick="testTL('East','green')">G</button>
+                        </div>
+                    </div>
+                    <!-- West -->
+                    <div class="tl-map-row">
+                        <div style="flex:1;">
+                            <label class="form-label">WEST ID</label>
+                            <input type="number" class="form-input" id="tl-west" placeholder="ID">
+                        </div>
+                        <div class="tl-test-btns">
+                            <button class="tbtn tbtn-r" onclick="testTL('West','red')">R</button>
+                            <button class="tbtn tbtn-y" onclick="testTL('West','yellow')">Y</button>
+                            <button class="tbtn tbtn-g" onclick="testTL('West','green')">G</button>
+                        </div>
+                    </div>
+                </div>
+                <button class="btn btn-cyan btn-sm" id="btn-update-tl" style="margin-top:10px;">UPDATE BINDINGS</button>
+            </div>
+            <div class="fwin-resize"></div>
+        </div>
+
+        <!-- WINDOW: Live Feed -->
+        <div class="fwin" id="win-live" style="width:500px; top:200px; left:200px; display:none;">
+            <div class="fwin-titlebar">
+                <span class="fwin-title">[ LIVE FEED / CAMERA STREAM ]</span>
+                <button class="fwin-btn pin-btn" title="Pin">P</button>
+                <button class="fwin-btn close-btn" title="Close">X</button>
+            </div>
+            <div class="fwin-body" style="padding:0; overflow:hidden;">
+                <div class="video-wrap" style="margin:0; border:none;">
+                    <img id="live-img" src="/video_feed" alt="Live Feed"
+                        onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'640\' height=\'360\'%3E%3Crect width=\'100%25\' height=\'100%25\' fill=\'%23000\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' font-family=\'monospace\' font-size=\'14\' fill=\'%234a5570\' text-anchor=\'middle\' dy=\'0.3em\'%3ENO_SIGNAL%3C/text%3E%3C/svg%3E'">
+                    <div class="video-overlay">
+                        <span class="vid-badge live">LIVE</span>
+                        <span class="vid-badge" id="live-badge-fps">MJPEG</span>
+                    </div>
+                </div>
+            </div>
+            <div class="fwin-resize"></div>
+        </div>
+
+
     </div>
 
-    {% include 'components/mode2_panel.html' %}
+    <!-- ===== MODE 2 PANEL ===== -->
+    <div id="mode2-panel">
+        <!-- Inner tab bar -->
+        <div class="m2-tabs">
+            <div class="m2-tab active" id="m2-tab-config" onclick="switchM2Tab('config')">CONFIGURE INPUTS</div>
+            <div class="m2-tab" id="m2-tab-main" onclick="switchM2Tab('main')">MAIN VIEW</div>
+            <div class="m2-tab-sep"></div>
+            <div class="m2-toggle-wrap">
+                <span class="m2-toggle-label">CONTROL MODE:</span>
+                <button class="m2-mode-btn" id="m2-mode-toggle" onclick="toggleControlMode()">FIXED CYCLE</button>
+            </div>
+            <div class="m2-tab-sep"></div>
+            <button class="m2-save-btn" id="m2-save-all">APPLY &amp; SAVE ALL</button>
+        </div>
+
+        <div class="m2-content">
+            <!-- CONFIG SECTION: Single card full-screen with direction sub-tabs -->
+            <div class="m2-section active" id="m2-section-config">
+                <div class="m2-config-container">
+                    <!-- Direction Sub-Tabs -->
+                    <div class="m2-subtabs">
+                        <button class="m2-subtab active" id="m2-subtab-North"
+                            onclick="switchM2ConfigDir('North')">NORTH</button>
+                        <button class="m2-subtab" id="m2-subtab-West" onclick="switchM2ConfigDir('West')">WEST</button>
+                        <button class="m2-subtab" id="m2-subtab-South"
+                            onclick="switchM2ConfigDir('South')">SOUTH</button>
+                        <button class="m2-subtab" id="m2-subtab-East" onclick="switchM2ConfigDir('East')">EAST</button>
+                    </div>
+
+                    <div class="m2-config-viewport">
+                        <!-- NORTH -->
+                        <div class="m2-dir-card active" id="m2-card-North" data-dir="North">
+                            <div class="m2-card-head">
+                                <span class="m2-dir-badge">NORTH SOURCE</span>
+                                <div class="m2-card-src-row">
+                                    <input type="text" class="m2-src-input" id="m2-src-North"
+                                        placeholder="0  /  http://127.0.0.1:5000/video_feed?id=27  /  rtsp://...">
+                                    <button class="m2-apply-btn" onclick="applyM2Source('North')">APPLY</button>
+                                </div>
+                            </div>
+                            <div class="m2-src-hint">Webcam index · HTTP MJPEG URL · RTSP · Video file path</div>
+                            <div class="m2-card-preview">
+                                <img id="m2-prev-North" src="/video_feed/mode2/North" alt="North Preview">
+                                <canvas class="m2-roi-canvas" id="m2-roi-canvas-North" data-dir="North"></canvas>
+                                <div class="m2-prev-badge" id="m2-prev-badge-North">PREVIEW</div>
+                            </div>
+                            <div class="m2-roi-bar">
+                                <span class="m2-roi-label">ROI ZONE MANAGEMENT</span>
+                                <span class="m2-roi-status" id="m2-roi-status-North">NO ROI SET</span>
+                                <button class="m2-roi-btn" id="m2-roi-draw-North"
+                                    onclick="toggleM2ROIDraw('North')">DRAW
+                                    ROI</button>
+                                <button class="m2-roi-btn clr" onclick="clearM2ROI('North')">CLEAR</button>
+                                <button class="m2-roi-btn save" onclick="saveM2ROI('North')">SAVE ROI</button>
+                            </div>
+                        </div>
+
+                        <!-- WEST -->
+                        <div class="m2-dir-card" id="m2-card-West" data-dir="West">
+                            <div class="m2-card-head">
+                                <span class="m2-dir-badge">WEST SOURCE</span>
+                                <div class="m2-card-src-row">
+                                    <input type="text" class="m2-src-input" id="m2-src-West"
+                                        placeholder="0  /  http://127.0.0.1:5000/video_feed?id=27  /  rtsp://...">
+                                    <button class="m2-apply-btn" onclick="applyM2Source('West')">APPLY</button>
+                                </div>
+                            </div>
+                            <div class="m2-src-hint">Webcam index · HTTP MJPEG URL · RTSP · Video file path</div>
+                            <div class="m2-card-preview">
+                                <img id="m2-prev-West" src="/video_feed/mode2/West" alt="West Preview">
+                                <canvas class="m2-roi-canvas" id="m2-roi-canvas-West" data-dir="West"></canvas>
+                                <div class="m2-prev-badge" id="m2-prev-badge-West">PREVIEW</div>
+                            </div>
+                            <div class="m2-roi-bar">
+                                <span class="m2-roi-label">ROI ZONE MANAGEMENT</span>
+                                <span class="m2-roi-status" id="m2-roi-status-West">NO ROI SET</span>
+                                <button class="m2-roi-btn" id="m2-roi-draw-West" onclick="toggleM2ROIDraw('West')">DRAW
+                                    ROI</button>
+                                <button class="m2-roi-btn clr" onclick="clearM2ROI('West')">CLEAR</button>
+                                <button class="m2-roi-btn save" onclick="saveM2ROI('West')">SAVE ROI</button>
+                            </div>
+                        </div>
+
+                        <!-- SOUTH -->
+                        <div class="m2-dir-card" id="m2-card-South" data-dir="South">
+                            <div class="m2-card-head">
+                                <span class="m2-dir-badge">SOUTH SOURCE</span>
+                                <div class="m2-card-src-row">
+                                    <input type="text" class="m2-src-input" id="m2-src-South"
+                                        placeholder="0  /  http://127.0.0.1:5000/video_feed?id=27  /  rtsp://...">
+                                    <button class="m2-apply-btn" onclick="applyM2Source('South')">APPLY</button>
+                                </div>
+                            </div>
+                            <div class="m2-src-hint">Webcam index · HTTP MJPEG URL · RTSP · Video file path</div>
+                            <div class="m2-card-preview">
+                                <img id="m2-prev-South" src="/video_feed/mode2/South" alt="South Preview">
+                                <canvas class="m2-roi-canvas" id="m2-roi-canvas-South" data-dir="South"></canvas>
+                                <div class="m2-prev-badge" id="m2-prev-badge-South">PREVIEW</div>
+                            </div>
+                            <div class="m2-roi-bar">
+                                <span class="m2-roi-label">ROI ZONE MANAGEMENT</span>
+                                <span class="m2-roi-status" id="m2-roi-status-South">NO ROI SET</span>
+                                <button class="m2-roi-btn" id="m2-roi-draw-South"
+                                    onclick="toggleM2ROIDraw('South')">DRAW
+                                    ROI</button>
+                                <button class="m2-roi-btn clr" onclick="clearM2ROI('South')">CLEAR</button>
+                                <button class="m2-roi-btn save" onclick="saveM2ROI('South')">SAVE ROI</button>
+                            </div>
+                        </div>
+
+                        <!-- EAST -->
+                        <div class="m2-dir-card" id="m2-card-East" data-dir="East">
+                            <div class="m2-card-head">
+                                <span class="m2-dir-badge">EAST SOURCE</span>
+                                <div class="m2-card-src-row">
+                                    <input type="text" class="m2-src-input" id="m2-src-East"
+                                        placeholder="0  /  http://127.0.0.1:5000/video_feed?id=27  /  rtsp://...">
+                                    <button class="m2-apply-btn" onclick="applyM2Source('East')">APPLY</button>
+                                </div>
+                            </div>
+                            <div class="m2-src-hint">Webcam index · HTTP MJPEG URL · RTSP · Video file path</div>
+                            <div class="m2-card-preview">
+                                <img id="m2-prev-East" src="/video_feed/mode2/East" alt="East Preview">
+                                <canvas class="m2-roi-canvas" id="m2-roi-canvas-East" data-dir="East"></canvas>
+                                <div class="m2-prev-badge" id="m2-prev-badge-East">PREVIEW</div>
+                            </div>
+                            <div class="m2-roi-bar">
+                                <span class="m2-roi-label">ROI ZONE MANAGEMENT</span>
+                                <span class="m2-roi-status" id="m2-roi-status-East">NO ROI SET</span>
+                                <button class="m2-roi-btn" id="m2-roi-draw-East" onclick="toggleM2ROIDraw('East')">DRAW
+                                    ROI</button>
+                                <button class="m2-roi-btn clr" onclick="clearM2ROI('East')">CLEAR</button>
+                                <button class="m2-roi-btn save" onclick="saveM2ROI('East')">SAVE ROI</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+
+            <!-- MAIN VIEW SECTION: 4 feed tiles with TL signal next to each -->
+            <div class="m2-section" id="m2-section-main">
+                <div class="m2-main-grid">
+                    <!-- NORTH tile -->
+                    <div class="m2-feed-tile" id="m2-tile-North">
+                        <div class="m2-feed-video">
+                            <img id="m2-main-North" src="/video_feed/mode2/North" alt="North Feed">
+                            <div class="m2-feed-overlay">
+                                <span class="vid-badge live">LIVE</span>
+                                <span class="vid-badge" style="border-color:var(--cyan);color:var(--cyan);">NORTH</span>
+                            </div>
+                        </div>
+                        <div class="m2-tl-panel">
+                            <span class="m2-tl-dir">N</span>
+                            <div class="m2-tl-housing">
+                                <div class="m2-tl-light lit-red" id="m2-tl-r-North"></div>
+                                <div class="m2-tl-light" id="m2-tl-y-North"></div>
+                                <div class="m2-tl-light" id="m2-tl-g-North"></div>
+                            </div>
+                            <span class="m2-count-lbl" id="m2-cnt-North">0</span>
+                            <span class="m2-count-sub">VEH</span>
+                        </div>
+                    </div>
+                    <!-- WEST tile -->
+                    <div class="m2-feed-tile" id="m2-tile-West">
+                        <div class="m2-feed-video">
+                            <img id="m2-main-West" src="/video_feed/mode2/West" alt="West Feed">
+                            <div class="m2-feed-overlay">
+                                <span class="vid-badge live">LIVE</span>
+                                <span class="vid-badge" style="border-color:var(--cyan);color:var(--cyan);">WEST</span>
+                            </div>
+                        </div>
+                        <div class="m2-tl-panel">
+                            <span class="m2-tl-dir">W</span>
+                            <div class="m2-tl-housing">
+                                <div class="m2-tl-light lit-red" id="m2-tl-r-West"></div>
+                                <div class="m2-tl-light" id="m2-tl-y-West"></div>
+                                <div class="m2-tl-light" id="m2-tl-g-West"></div>
+                            </div>
+                            <span class="m2-count-lbl" id="m2-cnt-West">0</span>
+                            <span class="m2-count-sub">VEH</span>
+                        </div>
+                    </div>
+                    <!-- SOUTH tile -->
+                    <div class="m2-feed-tile" id="m2-tile-South">
+                        <div class="m2-feed-video">
+                            <img id="m2-main-South" src="/video_feed/mode2/South" alt="South Feed">
+                            <div class="m2-feed-overlay">
+                                <span class="vid-badge live">LIVE</span>
+                                <span class="vid-badge" style="border-color:var(--cyan);color:var(--cyan);">SOUTH</span>
+                            </div>
+                        </div>
+                        <div class="m2-tl-panel">
+                            <span class="m2-tl-dir">S</span>
+                            <div class="m2-tl-housing">
+                                <div class="m2-tl-light lit-red" id="m2-tl-r-South"></div>
+                                <div class="m2-tl-light" id="m2-tl-y-South"></div>
+                                <div class="m2-tl-light" id="m2-tl-g-South"></div>
+                            </div>
+                            <span class="m2-count-lbl" id="m2-cnt-South">0</span>
+                            <span class="m2-count-sub">VEH</span>
+                        </div>
+                    </div>
+                    <!-- EAST tile -->
+                    <div class="m2-feed-tile" id="m2-tile-East">
+                        <div class="m2-feed-video">
+                            <img id="m2-main-East" src="/video_feed/mode2/East" alt="East Feed">
+                            <div class="m2-feed-overlay">
+                                <span class="vid-badge live">LIVE</span>
+                                <span class="vid-badge" style="border-color:var(--cyan);color:var(--cyan);">EAST</span>
+                            </div>
+                        </div>
+                        <div class="m2-tl-panel">
+                            <span class="m2-tl-dir">E</span>
+                            <div class="m2-tl-housing">
+                                <div class="m2-tl-light lit-red" id="m2-tl-r-East"></div>
+                                <div class="m2-tl-light" id="m2-tl-y-East"></div>
+                                <div class="m2-tl-light" id="m2-tl-g-East"></div>
+                            </div>
+                            <span class="m2-count-lbl" id="m2-cnt-East">0</span>
+                            <span class="m2-count-sub">VEH</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- TOAST CONTAINER -->
     <div id="toast-container"></div>

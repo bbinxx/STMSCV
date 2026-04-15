@@ -63,8 +63,8 @@ function applyFontSize(val) {
     saveState();
 }
 
-document.getElementById('fs-dec')?.addEventListener('click', () => applyFontSize(appState.fsBase - 1));
-document.getElementById('fs-inc')?.addEventListener('click', () => applyFontSize(appState.fsBase + 1));
+document.getElementById('fs-dec').addEventListener('click', () => applyFontSize(appState.fsBase - 1));
+document.getElementById('fs-inc').addEventListener('click', () => applyFontSize(appState.fsBase + 1));
 applyFontSize(appState.fsBase);
 
 // ─── CLOCK ───────────────────────────────────────────────────
@@ -200,7 +200,7 @@ function initDraggable(el) {
     const titlebar = el.querySelector('.fwin-titlebar');
     let dragging = false, ox = 0, oy = 0;
 
-    titlebar?.addEventListener('mousedown', (e) => {
+    titlebar.addEventListener('mousedown', (e) => {
         if (e.target.classList.contains('fwin-btn')) return;
         const s = appState.windows[winId];
         if (s.pinned) return;
@@ -234,7 +234,7 @@ function initResizable(el) {
     if (!handle) return;
     let resizing = false, ox = 0, oy = 0, ow = 0, oh = 0;
 
-    handle?.addEventListener('mousedown', (e) => {
+    handle.addEventListener('mousedown', (e) => {
         e.stopPropagation();
         const s = appState.windows[winId];
         resizing = true;
@@ -263,8 +263,8 @@ function initResizable(el) {
 // Close and pin buttons
 function initWindowControls(el) {
     const winId = el.id;
-    el.querySelector('.close-btn')?.addEventListener('click', () => closeWindow(winId));
-    el.querySelector('.pin-btn')?.addEventListener('click', () => {
+    el.querySelector('.close-btn').addEventListener('click', () => closeWindow(winId));
+    el.querySelector('.pin-btn').addEventListener('click', () => {
         const s = appState.windows[winId];
         s.pinned = !s.pinned;
         el.classList.toggle('pinned', s.pinned);
@@ -273,7 +273,7 @@ function initWindowControls(el) {
         saveState();
     });
 
-    el?.addEventListener('mousedown', () => bringToFront(winId));
+    el.addEventListener('mousedown', () => bringToFront(winId));
 }
 
 // Initialize all windows
@@ -450,8 +450,8 @@ function handleConnectionCommand(actionName) {
     });
 }
 
-document.getElementById('btn-save-only')?.addEventListener('click', () => handleConnectionCommand('save_only'));
-document.getElementById('btn-toggle-connect')?.addEventListener('click', () => handleConnectionCommand('toggle_connect'));
+document.getElementById('btn-save-only').addEventListener('click', () => handleConnectionCommand('save_only'));
+document.getElementById('btn-toggle-connect').addEventListener('click', () => handleConnectionCommand('toggle_connect'));
 const startBtn = document.getElementById('btn-start-system');
 const stopBtn = document.getElementById('btn-stop-system');
 if (startBtn) {
@@ -498,7 +498,7 @@ function loadTLForm() {
     });
 }
 
-document.getElementById('btn-update-tl')?.addEventListener('click', () => {
+document.getElementById('btn-update-tl').addEventListener('click', () => {
     ['North', 'South', 'East', 'West'].forEach(lane => {
         const el = document.getElementById('tl-' + lane.toLowerCase());
         appState.tlIds[lane] = el ? el.value.trim() : '';
@@ -670,14 +670,14 @@ if (roiCanvas) {
     });
 }
 
-document.getElementById('roi-clear-btn')?.addEventListener('click', () => {
+document.getElementById('roi-clear-btn').addEventListener('click', () => {
     roiPoints = [];
     drawROIScene();
     const s = document.getElementById('roi-status');
     if (s) s.textContent = 'POINTS CLEARED -- CLICK 4 POINTS';
 });
 
-document.getElementById('roi-save-btn')?.addEventListener('click', () => {
+document.getElementById('roi-save-btn').addEventListener('click', () => {
     if (roiPoints.length !== 4) {
         toast('Exactly 4 points required', 'red');
         return;
@@ -710,7 +710,7 @@ document.getElementById('roi-save-btn')?.addEventListener('click', () => {
     });
 });
 
-document.getElementById('roi-save-set-btn')?.addEventListener('click', () => {
+document.getElementById('roi-save-set-btn').addEventListener('click', () => {
     const name = document.getElementById('roi-set-name').value.trim();
     if (!name) { toast("Enter a set name", "red"); return; }
 
@@ -734,7 +734,6 @@ function refreshRoiSetsList() {
         .then(r => r.json())
         .then(data => {
             const list = document.getElementById('roi-sets-list');
-            if (!list) return; // Prevent error if component is removed
             list.innerHTML = '';
             if (!data.sets || data.sets.length === 0) {
                 list.innerHTML = '<span class="form-hint">No saved sets...</span>';
@@ -754,7 +753,7 @@ function refreshRoiSetsList() {
         });
 }
 
-document.getElementById('roi-load-btn')?.addEventListener('click', () => {
+document.getElementById('roi-load-btn').addEventListener('click', () => {
     const name = document.getElementById('roi-set-title') || document.getElementById('roi-set-name').value;
     if (!name) return;
     fetch(`/api/roi_sets/${name}`)
@@ -772,7 +771,7 @@ document.getElementById('roi-load-btn')?.addEventListener('click', () => {
 });
 
 // ─── TRAFFIC LIGHTS ──────────────────────────────────────────
-document.getElementById('btn-update-tl')?.addEventListener('click', () => {
+document.getElementById('btn-update-tl').addEventListener('click', () => {
     const data = {
         tl_north: document.getElementById('tl-north').value,
         tl_south: document.getElementById('tl-south').value,
@@ -894,19 +893,13 @@ function updatePhaseVisuals(data) {
     if (isConn && greenLane) {
         let cycleDuration = data.cycle_duration || 30;
         let pct = (phTimer / cycleDuration) * 100;
-        const phBar = document.getElementById('ph-bar');
-        const phTimerEl = document.getElementById('ph-timer');
-        const phLaneEl = document.getElementById('ph-lane');
-        if (phBar) phBar.style.width = pct + '%';
-        if (phTimerEl) phTimerEl.textContent = phTimer + 's';
-        if (phLaneEl) phLaneEl.textContent = greenLane.toUpperCase();
+        document.getElementById('ph-bar').style.width = pct + '%';
+        document.getElementById('ph-timer').textContent = phTimer + 's';
+        document.getElementById('ph-lane').textContent = greenLane.toUpperCase();
     } else {
-        const phBar = document.getElementById('ph-bar');
-        const phTimerEl = document.getElementById('ph-timer');
-        const phLaneEl = document.getElementById('ph-lane');
-        if (phBar) phBar.style.width = '0%';
-        if (phTimerEl) phTimerEl.textContent = '--s';
-        if (phLaneEl) phLaneEl.textContent = '--';
+        document.getElementById('ph-bar').style.width = '0%';
+        document.getElementById('ph-timer').textContent = '--s';
+        document.getElementById('ph-lane').textContent = '--';
     }
 
     // Update Topbar
@@ -1075,38 +1068,37 @@ updateLiveFeedSrc();
 
 // Start in Mode 2 by default
 let currentMode = 2;
-let mode2Active = true;
+switchMode(2);
 
 // ─── MODE SWITCHING ──────────────────────────────────────────
 
-function setMode2State(active) {
-    mode2Active = active;
+function switchMode(mode) {
+    currentMode = mode;
     const canvas = document.getElementById('canvas');
     const mode2Panel = document.getElementById('mode2-panel');
-    
-    if (canvas) canvas.style.display = ''; // Keep canvas visible for connection window
-    
-    const sbM2 = document.getElementById('sb-mode2');
-    if (active) {
-        if (mode2Panel) mode2Panel.classList.add('active');
-        if (sbM2) sbM2.classList.add('active');
-        try { loadM2ConfigFromBackend(); } catch (e) {}
+    const tab1 = document.getElementById('mode-tab-1');
+    const tab2 = document.getElementById('mode-tab-2');
+
+    if (mode === 2) {
+        canvas.style.display = 'none';
+        mode2Panel.classList.add('active');
+        tab1.classList.remove('active');
+        tab2.classList.add('active');
+        document.getElementById('sb-mode2').classList.add('active');
+        loadM2ConfigFromBackend();
     } else {
-        if (mode2Panel) mode2Panel.classList.remove('active');
-        if (sbM2) sbM2.classList.remove('active');
+        canvas.style.display = '';
+        mode2Panel.classList.remove('active');
+        tab1.classList.add('active');
+        tab2.classList.remove('active');
+        document.getElementById('sb-mode2').classList.remove('active');
     }
 }
 
-// Ensure Mode 2 is active on boot
-setMode2State(true);
-
-// Sidebar M2 button - setup toggle
-const sbM2Btn = document.getElementById('sb-mode2');
-if (sbM2Btn) {
-    sbM2Btn.addEventListener('click', () => {
-        setMode2State(!mode2Active);
-    });
-}
+// Sidebar M2 button
+document.getElementById('sb-mode2').addEventListener('click', () => {
+    switchMode(currentMode === 2 ? 1 : 2);
+});
 
 // ─── MODE 2 INNER TABS ───────────────────────────────────────
 function switchM2Tab(tab) {
@@ -1162,7 +1154,7 @@ function updateM2CardState(direction, isConfigured) {
     if (card) card.classList.toggle('configured', isConfigured);
 }
 
-document.getElementById('m2-save-all')?.addEventListener('click', () => {
+document.getElementById('m2-save-all').addEventListener('click', () => {
     const payload = {};
     let anyFilled = false;
     M2_DIRS.forEach(d => {
@@ -1508,5 +1500,12 @@ function loadM2ROIsFromBackend() {
         .catch(() => { });
 }
 
-// Load ROIs when the dashboard initializes
-setTimeout(loadM2ROIsFromBackend, 300);
+// Load ROIs when entering Mode 2
+const _origSwitchMode = switchMode;
+switchMode = function (mode) {
+    _origSwitchMode(mode);
+    if (mode === 2) {
+        setTimeout(loadM2ROIsFromBackend, 300);
+    }
+};
+

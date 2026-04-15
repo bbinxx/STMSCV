@@ -74,6 +74,21 @@
                     <label class="form-label">YOLO MODEL PATH</label>
                     <input type="text" class="form-input" id="cfg-yolo" placeholder="yolov8n.pt">
                 </div>
+                <div class="section-head">DETECTION ENGINE</div>
+                <div class="form-grid-2">
+                    <div class="form-group">
+                        <label class="form-label">CONFIDENCE</label>
+                        <input type="number" class="form-input" id="cfg-det-conf" step="0.05" placeholder="0.20">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">IOU THRESHOLD</label>
+                        <input type="number" class="form-input" id="cfg-det-iou" step="0.05" placeholder="0.45">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">RESOLUTION (PX)</label>
+                    <input type="number" class="form-input" id="cfg-det-imgsz" step="32" placeholder="640">
+                </div>
                 <div style="margin-top:20px; display:flex; flex-direction:column; gap:8px;">
                     <button class="btn btn-yellow" id="btn-save-only">SAVE CONFIG</button>
                     <button class="btn btn-green" id="btn-toggle-connect">CONNECT</button>

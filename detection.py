@@ -32,148 +32,125 @@ DETECTION_IMG_SIZE = 640  # reduce default for faster real‑time performance
 _YOLO_LOCK_ATTR = '_yolo_lock'
 
 
-def process_frame(frame, model, rois):
-    # Initialize counts based on rois keys
+def process_frame(frame, model, rois, conf_thres=0.20, iou_thres=0.45, img_size=640):
+    """
+    Detect vehicles only inside each ROI region.
+
+    For each ROI:
+      1. Crop the frame to the polygon's axis-aligned bounding box.
+      2. Run YOLO only on that crop (fast — small image).
+      3. Map detection coordinates back to the full frame.
+      4. Apply a point-in-polygon test against the exact ROI polygon.
+      5. Draw boxes and count only true positives inside the polygon.
+
+    Vehicles outside all ROIs are never processed, eliminating wasted
+    inference compute and spurious counts.
+    """
+    import threading
+
     lane_counts = {k: 0 for k in rois.keys()}
-    
-    # Overlay for semi-transparent ROI shading (only if we actually have ROIs)
+    lane_scores  = {k: 0 for k in rois.keys()}
+
+    # ── Draw ROI overlays on the full frame ───────────────────────────────────
     if rois:
         overlay = frame.copy()
-        # Draw ROI Polygons
         for name, points in rois.items():
             if points is None or len(points) < 3:
                 continue
             pts = points.reshape((-1, 1, 2))
-            # 1. Draw Semi-transparent shaded area
-            cv2.fillPoly(overlay, [pts], (0, 255, 255))  # Yellow shade
-            # 2. Draw Thick Border
+            cv2.fillPoly(overlay, [pts], (0, 255, 255))
             cv2.polylines(frame, [pts], isClosed=True, color=(0, 255, 255), thickness=3)
-            # 3. Add Lane Name
-            cv2.putText(frame, name.upper(), (int(points[0][0]), int(points[0][1] - 10)),
+            cv2.putText(frame, name.upper(),
+                        (int(points[0][0]), int(points[0][1] - 10)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-        # Blending (alpha 0.15)
         cv2.addWeighted(overlay, 0.15, frame, 0.85, 0, frame)
-    
-    # Run YOLO inference
-    if model is not None:
-        # make sure the model has a dedicated lock to avoid issues when predict() is
-        # called from multiple threads (e.g. live camera + mode2 threads)
-        import threading
-        if not hasattr(model, _YOLO_LOCK_ATTR):
-            setattr(model, _YOLO_LOCK_ATTR, threading.Lock())
-        lock = getattr(model, _YOLO_LOCK_ATTR)
 
-        with lock:
-            # use a smaller input size and half precision where sensible for speed
-            half_precision = False
-            try:
-                device_str = str(model.device).lower()
-                if 'cuda' in device_str or 'gpu' in device_str:
-                    half_precision = True
-            except Exception:
-                pass
+    if model is None or not rois:
+        return frame, lane_counts, lane_scores
 
-            # Always run inference on full frame so we can show every vehicle; cropping
-            # would make debugging harder and most frames are already small.
+    # ── Thread-safe YOLO lock ─────────────────────────────────────────────────
+    if not hasattr(model, _YOLO_LOCK_ATTR):
+        setattr(model, _YOLO_LOCK_ATTR, threading.Lock())
+    lock = getattr(model, _YOLO_LOCK_ATTR)
+
+    half_precision = False
+    try:
+        if 'cuda' in str(model.device).lower():
+            half_precision = True
+    except Exception:
+        pass
+
+    # ── Single-pass Full-Frame Inference ──────────────────────────────────────
+    predict_kwargs = dict(
+        conf=conf_thres,
+        iou=iou_thres,
+        imgsz=img_size,
+        half=half_precision,
+        verbose=False,
+    )
+    if ALL_VEHICLE_CLASSES is not None:
+        predict_kwargs['classes'] = ALL_VEHICLE_CLASSES
+
+    with lock:
+        results = model.predict(frame, **predict_kwargs)
+        
+    # --- Process detections against all ROIs ---------------------------------
+    for r in results:
+        for box in r.boxes:
+            cx1, cy1, cx2, cy2 = map(int, box.xyxy[0])
+            cls = int(box.cls[0])
+            cls_name = model.names[cls].lower()
+
             if ALL_VEHICLE_CLASSES is None:
-                results = model.predict(
-                    frame,
-                    conf=0.25,
-                    iou=0.45,
-                    imgsz=DETECTION_IMG_SIZE,
-                    half=half_precision,
-                    verbose=False
-                )
-            else:
-                results = model.predict(
-                    frame,
-                    classes=ALL_VEHICLE_CLASSES,
-                    conf=0.25,
-                    iou=0.45,
-                    imgsz=DETECTION_IMG_SIZE,
-                    half=half_precision,
-                    verbose=False
-                )
+                if not any(kw in cls_name for kw in VEHICLE_KEYWORDS):
+                    continue
 
-        # lane_scores used by rush priority (weighted), lane_counts is raw vehicle count
-        lane_scores = {k: 0 for k in rois.keys()}
+            weight = CLASS_WEIGHT.get(cls, 1)
 
-        for r in results:
-            for box in r.boxes:
-                x1, y1, x2, y2 = map(int, box.xyxy[0])
-                cls = int(box.cls[0])
-                cls_name = model.names[cls].lower()
+            # 4-point anchor check
+            fcx = (cx1 + cx2) // 2
+            fcy = (cy1 + cy2) // 2
+            check_pts = [
+                (float(fcx), float(fcy)),
+                (float(fcx), float(cy2)),
+                (float(cx1 + (cx2 - cx1) * 0.25), float(cy2)),
+                (float(cx1 + (cx2 - cx1) * 0.75), float(cy2)),
+            ]
 
-                # If we're not restricting by index, skip anything that doesn't look
-                # like a vehicle.  This keeps the counting logic focused on cars,
-                # bikes, buses, etc., but still lets the user see everything on the
-                # overlay (non‑vehicles are drawn in grey below).
-                if ALL_VEHICLE_CLASSES is None:
-                    if not any(kw in cls_name for kw in VEHICLE_KEYWORDS):
-                        # draw the box lightly but don't count it
-                        color = (200, 200, 200)
-                        cv2.rectangle(frame, (x1, y1), (x2, y2), color, 1)
-                        continue
-
-                weight = CLASS_WEIGHT.get(cls, 1)
-
-                cx = (x1 + x2) // 2
-                cy = (y1 + y2) // 2
-
-                # 4-point anchor check — catches large/angled vehicles
-                check_pts = [
-                    (float(cx),                        float(cy)),   # centroid
-                    (float(cx),                        float(y2)),   # bottom-center
-                    (float(x1 + (x2 - x1) * 0.25),   float(y2)),   # bottom-left quarter
-                    (float(x1 + (x2 - x1) * 0.75),   float(y2)),   # bottom-right quarter
-                ]
-
-                # Emergency flag
-                is_emergency = any(kw in cls_name for kw in ['ambulance', 'fire', 'emergency', 'police'])
-
-                # Determine whether this detection lies in any ROI
-                inside_lane = None
-                for lane_name, pts in rois.items():
-                    if pts is None or len(pts) < 3:
-                        continue
-                    roi_poly = pts.astype(np.float32)
-                    if any(cv2.pointPolygonTest(roi_poly, pt, False) >= 0 for pt in check_pts):
-                        inside_lane = lane_name
-                        break
-
-                # Choose color / thickness based on ROI membership & urgency
-                if inside_lane:
-                    lane_counts[inside_lane] += 1
-                    lane_scores[inside_lane] += weight * (5 if is_emergency else 1)
-
-                    if is_emergency:
-                        color = (0, 0, 255)
-                    elif cls in [1, 3]:  # bicycle / motorcycle
-                        color = (255, 200, 0)
-                    else:
-                        color = (0, 255, 0)
-                    thickness = 3 if is_emergency else 2
+            # Find if this vehicle is inside ANY ROI
+            is_emergency = any(kw in cls_name for kw in ['ambulance', 'fire', 'emergency', 'police'])
+            matched_lane = None
+            
+            for lane_name, roi_pts in rois.items():
+                if roi_pts is None or len(roi_pts) < 3:
+                    continue
+                roi_poly = roi_pts.astype(np.float32)
+                inside = any(cv2.pointPolygonTest(roi_poly, pt, False) >= 0 for pt in check_pts)
+                
+                if inside:
+                    matched_lane = lane_name
+                    lane_counts[lane_name] += 1
+                    lane_scores[lane_name] += weight * (5 if is_emergency else 1)
+                    break # count in the first matched lane
+            
+            if matched_lane:
+                if is_emergency:
+                    color = (0, 0, 255)
+                elif cls in [1, 3]:   # bicycle / motorcycle
+                    color = (255, 200, 0)
                 else:
-                    # draw non‑ROI detections in light gray so they are visible during setup
-                    color = (200, 200, 200)
-                    thickness = 1
+                    color = (0, 255, 0)
+                thickness = 3 if is_emergency else 2
 
-                cv2.rectangle(frame, (x1, y1), (x2, y2), color, thickness)
+                cv2.rectangle(frame, (cx1, cy1), (cx2, cy2), color, thickness)
                 for pt in check_pts:
                     cv2.circle(frame, (int(pt[0]), int(pt[1])), 3, (0, 80, 255), -1)
+
                 label = cls_name.upper()
                 if is_emergency:
                     label = f"!!! {label} !!!"
-                if inside_lane:
-                    cv2.putText(frame, label, (x1, y1 - 10),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
-                else:
-                    cv2.putText(frame, label, (x1, y1 - 10),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
-
-    # Always define lane_scores (empty if no model)
-    if model is None:
-        lane_scores = {k: 0 for k in rois}
+                cv2.putText(frame, label, (cx1, cy1 - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
     return frame, lane_counts, lane_scores
 
