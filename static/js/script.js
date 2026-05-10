@@ -28,6 +28,8 @@ const DEFAULT_STATE = {
 
     tlIds: { North: '', South: '', East: '', West: '' },
     rois: {},
+    localControlEnabled: false,
+    localTLStates: { North: 'red', South: 'red', East: 'red', West: 'red' },
     logEntries: []
 };
 
@@ -51,6 +53,8 @@ Object.keys(DEFAULT_STATE.windows).forEach(k => {
 if (!appState.config) appState.config = { ...DEFAULT_STATE.config };
 if (!appState.tlIds) appState.tlIds = { ...DEFAULT_STATE.tlIds };
 if (!appState.rois) appState.rois = {};
+if (typeof appState.localControlEnabled !== 'boolean') appState.localControlEnabled = false;
+if (!appState.localTLStates) appState.localTLStates = { ...DEFAULT_STATE.localTLStates };
 if (!appState.logEntries) appState.logEntries = [];
 
 // ─── FONT SIZE ───────────────────────────────────────────────
@@ -469,6 +473,46 @@ if (mode2ApplyBtn) {
 }
 
 loadConfigToForm();
+updateLocalControlUI();
+
+function getConnectionStatus() {
+    return document.getElementById('tb-control-status')?.textContent?.trim().toUpperCase() || 'DISCONNECTED';
+}
+
+function setLocalControlEnabled(enabled) {
+    appState.localControlEnabled = enabled;
+    saveState();
+    updateLocalControlUI();
+    toast(enabled ? 'Local traffic light override ENABLED' : 'Local traffic light override DISABLED', enabled ? 'green' : 'cyan');
+    if (!enabled) pollStats();
+}
+
+function updateLocalControlUI() {
+    const btn = document.getElementById('tb-toggle-local');
+    if (!btn) return;
+    btn.classList.toggle('active', !!appState.localControlEnabled);
+    btn.textContent = appState.localControlEnabled ? 'LOCAL' : 'AUTO';
+}
+
+function updateLocalPhaseFromStates() {
+    const active = Object.entries(appState.localTLStates).find(([_, state]) => state === 'green');
+    const phaseEl = document.getElementById('tb-phase-lane');
+    if (phaseEl) {
+        phaseEl.textContent = active ? active[0].toUpperCase() : '--';
+    }
+}
+
+function applyLocalTLState(lane, state) {
+    appState.localTLStates[lane] = state;
+    saveState();
+    setTLState(lane, state);
+    updateLocalPhaseFromStates();
+}
+
+const localToggleBtn = document.getElementById('tb-toggle-local');
+if (localToggleBtn) {
+    localToggleBtn.addEventListener('click', () => setLocalControlEnabled(!appState.localControlEnabled));
+}
 
 // Load external Config from DB on Init
 function loadExternalConfig() {
@@ -524,13 +568,22 @@ document.getElementById('btn-update-tl').addEventListener('click', () => {
 
 // Manual TL Test Helper for R/Y/G buttons
 window.testTL = function (lane, state) {
-    const actorId = document.getElementById('tl-' + lane.toLowerCase()).value;
+    const actorId = document.getElementById('tl-' + lane.toLowerCase()).value.trim();
+    const connStatus = getConnectionStatus();
+    const isConnected = connStatus === 'CONNECTED';
+
+    if (appState.localControlEnabled || !isConnected) {
+        applyLocalTLState(lane, state);
+        toast(`Local override ${lane} -> ${state.toUpperCase()}`, 'green');
+        return;
+    }
+
     if (!actorId) {
         toast("Enter an Actor ID first", "red");
         return;
     }
-    toast(`Testing ${lane}:${actorId} -> ${state.toUpperCase()}...`, 'cyan');
 
+    toast(`Testing ${lane}:${actorId} -> ${state.toUpperCase()}...`, 'cyan');
     fetch('/api/tl_test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -857,12 +910,9 @@ let phaseMax = 30;
 
 function updateDashboardStats(data) {
     const isConn = data.connection === "Connected";
-    let counts = { North: 0, South: 0, East: 0, West: 0 };
-    if (isConn) {
-        counts = (typeof currentMode !== 'undefined' && currentMode === 2) ? (data.mode2_counts || {}) : (data.counts || {});
-    }
-    const greenLane = isConn ? data.green_lane : null;
-    const timer = isConn ? data.timer : 0;
+    const counts = (typeof currentMode !== 'undefined' && currentMode === 2) ? (data.mode2_counts || {}) : (data.counts || {});
+    const greenLane = appState.localControlEnabled ? Object.entries(appState.localTLStates).find(([_, state]) => state === 'green')?.[0] || null : (data.green_lane || null);
+    const timer = data.timer || 0;
 
     let total = 0;
     ['North', 'South', 'East', 'West'].forEach(lane => {
@@ -874,7 +924,7 @@ function updateDashboardStats(data) {
         // Active indicator on card
         const card = document.getElementById('lane-card-' + lane);
         if (card) {
-            if (isConn && lane === greenLane) card.classList.add('active');
+            if (lane === greenLane) card.classList.add('active');
             else card.classList.remove('active');
         }
     });
@@ -885,12 +935,13 @@ function updateDashboardStats(data) {
 
 function updatePhaseVisuals(data) {
     const isConn = data.connection === "Connected";
-    const greenLane = data.green_lane;
+    const useLocalTL = appState.localControlEnabled;
+    const greenLane = useLocalTL ? Object.entries(appState.localTLStates).find(([_, state]) => state === 'green')?.[0] || null : (data.green_lane || null);
     const phTimer = data.timer;
-    const tlStates = data.tl_states || {};
     const counts = data.counts || {};
+    const tlStates = useLocalTL ? appState.localTLStates : (data.tl_states || {});
 
-    if (isConn && greenLane) {
+    if (!useLocalTL && greenLane) {
         let cycleDuration = data.cycle_duration || 30;
         let pct = (phTimer / cycleDuration) * 100;
         document.getElementById('ph-bar').style.width = pct + '%';
@@ -903,8 +954,13 @@ function updatePhaseVisuals(data) {
     }
 
     // Update Topbar
-    document.getElementById('tb-phase-lane').textContent = (isConn && greenLane) ? greenLane.toUpperCase() : '--';
-    document.getElementById('tb-cycle-timer').textContent = (isConn && phTimer !== undefined) ? phTimer + 's' : '--s';
+    if (useLocalTL) {
+        updateLocalPhaseFromStates();
+        document.getElementById('tb-cycle-timer').textContent = '--s';
+    } else {
+        document.getElementById('tb-phase-lane').textContent = greenLane ? greenLane.toUpperCase() : '--';
+        document.getElementById('tb-cycle-timer').textContent = greenLane ? phTimer + 's' : '--s';
+    }
 
     // Update TL Visual States and Counts
     ['North', 'South', 'East', 'West'].forEach(lane => {
@@ -943,6 +999,24 @@ function pollStats() {
 
             updateDashboardStats(data);
             setApiStatus(data.connection);
+            // Update topbar system + detection status
+            const tbSys = document.getElementById('tb-system-status');
+            if (tbSys) {
+                if (data.system_started) {
+                    tbSys.textContent = 'RUNNING';
+                    tbSys.className = 'tb-stat-value green';
+                } else {
+                    tbSys.textContent = 'STOPPED';
+                    tbSys.className = 'tb-stat-value red';
+                }
+            }
+            // Detection status
+            const tbDet = document.getElementById('tb-detect-status');
+            if (tbDet) {
+                const ds = data.detect_status || 'INACTIVE';
+                tbDet.textContent = ds;
+                tbDet.style.color = ds === 'ACTIVE' ? 'var(--green)' : ds === 'READY' ? 'var(--yellow)' : 'var(--text-dim)';
+            }
             setDetectionStatus(data.detect_status);
             setFeedStatus(data.feed_status);
         })
@@ -1073,31 +1147,26 @@ switchMode(2);
 // ─── MODE SWITCHING ──────────────────────────────────────────
 
 function switchMode(mode) {
-    currentMode = mode;
+    currentMode = 2; // Always force Mode 2
     const canvas = document.getElementById('canvas');
     const mode2Panel = document.getElementById('mode2-panel');
-    const tab1 = document.getElementById('mode-tab-1');
-    const tab2 = document.getElementById('mode-tab-2');
+    const sbMode2 = document.getElementById('sb-mode2');
 
-    if (mode === 2) {
-        canvas.style.display = 'none';
-        mode2Panel.classList.add('active');
-        tab1.classList.remove('active');
-        tab2.classList.add('active');
-        document.getElementById('sb-mode2').classList.add('active');
+    if(canvas) canvas.style.display = 'none';
+    if(mode2Panel) mode2Panel.classList.add('active');
+    if(sbMode2) sbMode2.classList.add('active');
+    
+    // Always load config for the active Mode 2
+    try {
         loadM2ConfigFromBackend();
-    } else {
-        canvas.style.display = '';
-        mode2Panel.classList.remove('active');
-        tab1.classList.add('active');
-        tab2.classList.remove('active');
-        document.getElementById('sb-mode2').classList.remove('active');
+    } catch (e) {
+        console.warn("M2 config load deferred until defined");
     }
 }
 
-// Sidebar M2 button
+// Sidebar M2 button just forces refresh of Mode 2 if clicked
 document.getElementById('sb-mode2').addEventListener('click', () => {
-    switchMode(currentMode === 2 ? 1 : 2);
+    switchMode(2);
 });
 
 // ─── MODE 2 INNER TABS ───────────────────────────────────────
@@ -1205,12 +1274,15 @@ const PRIORITY_RANK_CLASSES = ['rank-1', 'rank-2', 'rank-3', 'rank-4'];
 
 function updateMode2Visuals(data) {
     if (currentMode !== 2) return;
-    const tlStates = data.tl_states || {};
+    const isConn = data.connection === 'Connected';
+    const useLocalTL = appState.localControlEnabled;
+    const tlStates = useLocalTL ? appState.localTLStates : (data.tl_states || {});
     const m2counts = data.mode2_counts || {};
-    const greenLane = data.green_lane;
+    const greenLane = useLocalTL ? Object.entries(tlStates).find(([_, state]) => state === 'green')?.[0] || null : data.green_lane;
     const timer = data.timer || 0;
     const cycleDuration = data.cycle_duration || 30;
-    const isConn = data.connection === 'Connected';
+    // Intensity data (populated via separate fetch in syncSystemButtons)
+    const intensityData = window._lastIntensityData || {};
 
     // ─── Compute priority ranking by vehicle count ──────────
     const sortedLanes = [...M2_DIRS].sort((a, b) => {
@@ -1242,30 +1314,25 @@ function updateMode2Visuals(data) {
         const tile = document.getElementById('m2-tile-' + lane);
         if (tile) tile.classList.toggle('green-active', lane === greenLane && state === 'green');
 
-        // ── Priority badge ─────────────────────────────────────
+        // ── Priority badge (always show, not just when connected) ──────────
         const badge = document.getElementById('m2-pri-' + lane);
         if (badge) {
             const rank = rankMap[lane];
             const hasVehicles = count > 0;
             badge.className = 'm2-priority-badge';
-            if (isConn && hasVehicles) {
+            if (hasVehicles) {
                 badge.classList.add(PRIORITY_RANK_CLASSES[Math.min(rank, 3)]);
                 badge.textContent = PRIORITY_LABELS[Math.min(rank, 3)];
-                badge.style.display = '';
-            } else if (!isConn && rank === 0) {
-                // Even disconnected, show which lane would be first
-                badge.classList.add('rank-1');
-                badge.textContent = '▲ PRIORITY #1';
                 badge.style.display = '';
             } else {
                 badge.style.display = 'none';
             }
         }
 
-        // ── Countdown bar (only for active green lane) ─────────
+        // ── Countdown bar (active green lane — works without controller) ──
         const cdBar = document.getElementById('m2-cd-' + lane);
         if (cdBar) {
-            if (isConn && lane === greenLane && (state === 'green' || state === 'yellow')) {
+            if (lane === greenLane && (state === 'green' || state === 'yellow')) {
                 const pct = Math.min(100, (timer / cycleDuration) * 100);
                 cdBar.style.width = pct + '%';
                 cdBar.className = 'm2-tl-countdown-bar' + (pct < 25 ? ' critical' : (pct < 50 ? ' warn' : ''));
@@ -1281,6 +1348,20 @@ function updateMode2Visuals(data) {
             const pct = Math.round((count / maxCount) * 100);
             loadBar.style.width = pct + '%';
             loadBar.className = 'm2-tl-load-bar' + (pct >= 75 ? ' hi' : (pct >= 40 ? ' med' : ''));
+        }
+
+        // ── Intensity score + wait time overlay ────────────────
+        const intensityEl = document.getElementById('m2-intensity-' + lane);
+        const waitEl      = document.getElementById('m2-wait-' + lane);
+        if (intensityEl) {
+            const sc = (intensityData.scores || {})[lane] || 0;
+            intensityEl.textContent = 'SCR: ' + sc.toFixed(0);
+            intensityEl.style.color = sc > 50 ? 'var(--red)' : sc > 20 ? 'var(--yellow)' : 'var(--text-dim)';
+        }
+        if (waitEl) {
+            const wt = (intensityData.wait_times || {})[lane] || 0;
+            waitEl.textContent = 'WAIT: ' + (wt > 0 ? wt.toFixed(0) + 's' : '0s');
+            waitEl.style.color = wt > 30 ? 'var(--red)' : wt > 10 ? 'var(--yellow)' : 'var(--text-dim)';
         }
     });
 
@@ -1313,6 +1394,56 @@ window.toggleControlMode = function () {
     }).catch(() => toast('Mode Update Failed', 'red'));
 };
 
+// ─── M2 SYSTEM START / STOP (calls /api/system) ─────────────
+function _callSystemAPI(action) {
+    return fetch('/api/system', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action })
+    }).then(r => r.json());
+}
+
+window.m2SystemStart = function () {
+    _callSystemAPI('start').then(data => {
+        if (data.status === 'success') {
+            toast('▶ System STARTED — Traffic Logic Active', 'green');
+        } else {
+            toast('Start failed: ' + data.message, 'red');
+        }
+    }).catch(() => toast('Network error calling /api/system', 'red'));
+};
+
+window.m2SystemStop = function () {
+    _callSystemAPI('stop').then(data => {
+        toast('■ System STOPPED', 'red');
+    }).catch(() => toast('Network error', 'red'));
+};
+
+// Also wire the start/stop buttons in connection.html
+const _connStartBtn = document.getElementById('btn-start-system');
+const _connStopBtn  = document.getElementById('btn-stop-system');
+if (_connStartBtn) _connStartBtn.addEventListener('click', window.m2SystemStart);
+if (_connStopBtn)  _connStopBtn.addEventListener('click', window.m2SystemStop);
+
+// Sync system status button states from poll data
+function syncSystemButtons(data) {
+    const isStarted = data.system_started === true;
+    const startBtn  = document.getElementById('m2-btn-start');
+    const stopBtn   = document.getElementById('m2-btn-stop');
+    if (startBtn) {
+        startBtn.style.background = isStarted ? 'rgba(0,232,122,0.2)' : 'none';
+        startBtn.textContent = isStarted ? '▶ RUNNING' : '▶ START';
+    }
+    if (stopBtn) {
+        stopBtn.style.background = isStarted ? 'none' : 'rgba(240,48,80,0.1)';
+        stopBtn.textContent = '■ STOP';
+    }
+    // Fetch intensity scores periodically for display in tiles
+    fetch('/api/intensity_scores').then(r => r.json()).then(d => {
+        window._lastIntensityData = d;
+    }).catch(() => {});
+}
+
 window.switchM2ConfigDir = function (dir) {
     const directions = ['North', 'West', 'South', 'East'];
     directions.forEach(d => {
@@ -1331,6 +1462,7 @@ const _origUpdateDash = updateDashboardStats;
 updateDashboardStats = function (data) {
     _origUpdateDash(data);
     updateMode2Visuals(data);
+    syncSystemButtons(data);
 };
 
 // Load M2 config at startup (non-blocking)

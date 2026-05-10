@@ -6,15 +6,16 @@
             <div class="m2-tab" id="m2-tab-main" onclick="switchM2Tab('main')">MAIN VIEW</div>
             <div class="m2-tab-sep"></div>
             <div class="m2-toggle-wrap">
-                <span class="m2-toggle-label">CONTROL MODE:</span>
-                <button class="m2-mode-btn" id="m2-mode-toggle" onclick="toggleControlMode()">FIXED CYCLE</button>
+                <span class="m2-toggle-label">MODE:</span>
+                <button class="m2-mode-btn" id="m2-mode-toggle" onclick="toggleControlMode()" style="min-width:auto; padding:4px 12px;">FIXED CYCLE</button>
             </div>
-            <div class="m2-tab-sep"></div>
+            <div class="m2-tab-sep" style="flex:0; width:1px; background:var(--border); height:24px; margin:0 8px;"></div>
             <div class="m2-toggle-wrap">
-                <button class="m2-mode-btn" id="btn-start-system" style="border-color:var(--green); color:var(--green);">START SYSTEM</button>
-                <button class="m2-mode-btn" id="btn-stop-system" style="border-color:var(--red); color:var(--red); margin-left:8px;">STOP SYSTEM</button>
+                <span class="m2-toggle-label">SYSTEM:</span>
+                <button class="m2-mode-btn m2-start-btn" id="m2-btn-start" onclick="m2SystemStart()" style="border-color:var(--green); color:var(--green); min-width:auto; padding:4px 16px;">▶ START</button>
+                <button class="m2-mode-btn" id="m2-btn-stop" onclick="m2SystemStop()" style="border-color:var(--red); color:var(--red); margin-left:6px; min-width:auto; padding:4px 16px;">■ STOP</button>
             </div>
-            <div class="m2-tab-sep"></div>
+            <div class="m2-tab-sep" style="flex:0; width:1px; background:var(--border); height:24px; margin:0 8px;"></div>
             <button class="m2-save-btn" id="m2-save-all">APPLY &amp; SAVE ALL</button>
         </div>
 
@@ -173,6 +174,8 @@
                             <div class="m2-tl-stats">
                                 <span class="m2-count-lbl" id="m2-cnt-North">0</span>
                                 <span class="m2-count-sub">VEH</span>
+                                <span style="font-family:'Share Tech Mono',monospace;font-size:9px;margin-top:3px;" id="m2-intensity-North"></span>
+                                <span style="font-family:'Share Tech Mono',monospace;font-size:9px;" id="m2-wait-North"></span>
                             </div>
                             <div class="m2-tl-load-wrap">
                                 <div class="m2-tl-load-bar" id="m2-load-North"></div>
@@ -206,6 +209,8 @@
                             <div class="m2-tl-stats">
                                 <span class="m2-count-lbl" id="m2-cnt-West">0</span>
                                 <span class="m2-count-sub">VEH</span>
+                                <span style="font-family:'Share Tech Mono',monospace;font-size:9px;margin-top:3px;" id="m2-intensity-West"></span>
+                                <span style="font-family:'Share Tech Mono',monospace;font-size:9px;" id="m2-wait-West"></span>
                             </div>
                             <div class="m2-tl-load-wrap">
                                 <div class="m2-tl-load-bar" id="m2-load-West"></div>
@@ -239,6 +244,8 @@
                             <div class="m2-tl-stats">
                                 <span class="m2-count-lbl" id="m2-cnt-South">0</span>
                                 <span class="m2-count-sub">VEH</span>
+                                <span style="font-family:'Share Tech Mono',monospace;font-size:9px;margin-top:3px;" id="m2-intensity-South"></span>
+                                <span style="font-family:'Share Tech Mono',monospace;font-size:9px;" id="m2-wait-South"></span>
                             </div>
                             <div class="m2-tl-load-wrap">
                                 <div class="m2-tl-load-bar" id="m2-load-South"></div>
@@ -272,6 +279,8 @@
                             <div class="m2-tl-stats">
                                 <span class="m2-count-lbl" id="m2-cnt-East">0</span>
                                 <span class="m2-count-sub">VEH</span>
+                                <span style="font-family:'Share Tech Mono',monospace;font-size:9px;margin-top:3px;" id="m2-intensity-East"></span>
+                                <span style="font-family:'Share Tech Mono',monospace;font-size:9px;" id="m2-wait-East"></span>
                             </div>
                             <div class="m2-tl-load-wrap">
                                 <div class="m2-tl-load-bar" id="m2-load-East"></div>

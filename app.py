@@ -8,8 +8,13 @@ import json
 import os
 import sqlite3
 import urllib.request
+import logging
 from ultralytics import YOLO
 from flask import Flask, Response, render_template, request, redirect, url_for, jsonify
+
+# Suppress Flask access logs
+log = logging.getLogger('werkzeug')
+log.setLevel(logging.ERROR)
 
 from detection import process_frame, control_traffic_lights_logic, get_automation_data, DETECTION_IMG_SIZE
 
@@ -184,13 +189,10 @@ system_started = False
 # Checks for required runtime configuration before starting
 
 def check_start_prereqs():
+    """Only requires YOLO model; controller connectivity is optional."""
     missing = []
-    if not config.get('controller_host'):
-        missing.append('controller_host')
-    if not config.get('controller_port'):
-        missing.append('controller_port')
     if not config.get('yolo_model'):
-        missing.append('yolo_model')
+        missing.append('yolo_model (set in CON panel)')
     if config.get('yolo_model') and model is None:
         missing.append('yolo_model not loaded')
     return missing
@@ -202,10 +204,25 @@ DIRECTIONS = ['North', 'South', 'East', 'West']
 
 # ── camera config ─────────────────────────────────────────────
 def load_mode2_cameras():
-    return {d: '' for d in DIRECTIONS}
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT lane, source FROM mode2_cameras")
+    rows = c.fetchall()
+    conn.close()
+    data = {d: '' for d in DIRECTIONS}
+    for lane, source in rows:
+        data[lane] = source
+    return data
 
 def save_mode2_cameras(cam_cfg):
-    pass
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("DELETE FROM mode2_cameras")
+    for lane, source in cam_cfg.items():
+        if source:
+            c.execute("INSERT INTO mode2_cameras (lane, source) VALUES (?, ?)", (lane, source))
+    conn.commit()
+    conn.close()
 
 # ── ROI config ────────────────────────────────────────────────
 def load_mode2_rois():
@@ -267,7 +284,13 @@ def _read_mjpeg_url(direction, src):
     print(f"[MODE2] Connecting MJPEG URL for {direction}: {src}", flush=True)
     buf = b''
     try:
-        stream = urllib.request.urlopen(src, timeout=10)
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (STMCV Dashboard)',
+            'Accept': 'multipart/x-mixed-replace,image/jpeg,image/*,*/*;q=0.8',
+            'Connection': 'keep-alive'
+        }
+        req = urllib.request.Request(src, headers=headers)
+        stream = urllib.request.urlopen(req, timeout=10)
         while True:
             # Stop if source changed
             src_now = mode2_cam_config.get(direction, '').strip()
@@ -503,7 +526,8 @@ def _read_external_mjpeg(src):
     """Generator that yields frames from a multipart MJPEG HTTP stream."""
     buf = b''
     try:
-        stream = urllib.request.urlopen(src, timeout=10)
+        req = urllib.request.Request(src, headers={'User-Agent': 'Mozilla/5.0 (STMCV Dashboard)'})
+        stream = urllib.request.urlopen(req, timeout=10)
         while True:
             chunk = stream.read(4096)
             if not chunk:
@@ -634,20 +658,6 @@ def vision_processing_loop():
                 
                 last_process_time = time.time()
                 
-                # Control only when system started, controller connected and live feed is alive.
-                if system_started and connection_status == "Connected" and is_live_feed_ready():
-                    cycle_time = float(config.get('cycle_timer', 30.0))
-                    host = config.get("controller_host", "localhost")
-                    port = config.get("controller_port", 5000)
-                    control_url = f"http://{host}:{port}"
-                    control_traffic_lights_logic(
-                        control_url, lane_counts, TL_IDS,
-                        cycle_timer=cycle_time,
-                        lane_scores=current_lane_scores
-                    )
-                elif connection_status == "Connected" and not is_live_feed_ready():
-                    connection_status = "Requires LIVE FEED"
-                
                 ret, buffer = cv2.imencode('.jpg', frame)
                 if ret:
                     latest_frame = buffer.tobytes()
@@ -663,38 +673,43 @@ def mode2_traffic_control_loop():
     """
     Mode 2 (multi-camera): runs control_traffic_lights_logic every second
     using per-direction counts & weighted scores from detection overlay threads.
-    Only active when control_mode == 2.
+    The local automation state (green lane selection) always runs so the UI
+    reflects switching even when the external controller is disconnected.
     """
     global connection_status, mode2_counts, mode2_scores, system_started
-    from detection import automation_state
     print("[INIT] Mode2 Traffic Control Thread Started", flush=True)
 
     while True:
         try:
-            # Only run mode2 control when user started the system.
+            # Only start once user has pressed START
             if not system_started:
                 time.sleep(1.0)
                 continue
-            # We must process mode2 controls if we have active mode2 threads.
-            # To prevent conflict with main vision loop, let's proxy the current counts to the logic.
+
+            counts = {d: mode2_counts.get(d, 0) for d in DIRECTIONS}
+            scores = {d: mode2_scores.get(d, 0) for d in DIRECTIONS}
+
+            # Always load latest config
+            current_config = load_config()
+            cycle_time = float(current_config.get('cycle_timer', 30.0))
+
+            # Build control URL — only passed to the HTTP dispatch when truly connected
             if connection_status == "Connected" and is_live_feed_ready():
-                counts = {d: mode2_counts.get(d, 0) for d in DIRECTIONS}
-                scores = {d: mode2_scores.get(d, 0) for d in DIRECTIONS}
-                
-                # Get cycle timer from main config
-                current_config = load_config()
-                cycle_time = float(current_config.get('cycle_timer', 30.0))
                 host = current_config.get("controller_host", "localhost")
                 port = current_config.get("controller_port", 5000)
                 control_url = f"http://{host}:{port}"
-                
-                control_traffic_lights_logic(
-                    control_url, counts, TL_IDS,
-                    cycle_timer=cycle_time,
-                    lane_scores=scores
-                )
             elif connection_status == "Connected" and not is_live_feed_ready():
                 connection_status = "Requires LIVE FEED"
+                control_url = None
+            else:
+                control_url = None  # Disconnected — run state machine only, skip HTTP
+
+            # State machine always runs; HTTP dispatch skipped when control_url is None
+            control_traffic_lights_logic(
+                control_url, counts, TL_IDS,
+                cycle_timer=cycle_time,
+                lane_scores=scores
+            )
 
             time.sleep(1.0)
         except Exception as e:
@@ -766,7 +781,30 @@ def api_lane_counts():
         "detect_status": is_detecting,
         "feed_status": "ONLINE" if is_live_feed_ready() else "NO SIGNAL",
         "mode2_counts": {d: mode2_counts.get(d, 0) for d in DIRECTIONS},
+        "mode2_thread_health": {d: (d in mode2_threads and mode2_threads[d].is_alive()) for d in DIRECTIONS},
         "control_mode": control_mode
+    })
+
+@app.route('/api/intensity_scores')
+def api_intensity_scores():
+    """Returns per-lane intensity scores and wait times from the detection module."""
+    from detection import automation_state
+    scores = {}
+    wait_times = {}
+    COUNT_WEIGHT = 5.0
+    WAIT_WEIGHT = 1.0
+    for lane in DIRECTIONS:
+        cnt  = mode2_counts.get(lane, 0)
+        wait = automation_state.get("wait_times", {}).get(lane, 0.0)
+        score = (cnt * COUNT_WEIGHT) + (wait * WAIT_WEIGHT) + mode2_scores.get(lane, 0) * 10
+        scores[lane]    = round(score, 1)
+        wait_times[lane] = round(wait, 1)
+    return jsonify({
+        "scores":     scores,
+        "wait_times": wait_times,
+        "green_lane": automation_state.get("current_green_lane"),
+        "is_yellow":  automation_state.get("is_yellow_phase", False),
+        "system_started": system_started,
     })
 
 @app.route('/api/live_feed')
@@ -789,6 +827,25 @@ def api_camera_status():
 def api_get_config():
     global config
     return jsonify(config)
+
+@app.route('/api/system', methods=['POST'])
+def api_system():
+    """Simple start/stop endpoint callable directly from the frontend."""
+    global system_started
+    data = request.get_json(force=True) or {}
+    action = data.get('action', '')
+    if action == 'start':
+        missing = check_start_prereqs()
+        if missing:
+            return jsonify({'status': 'error', 'message': 'Missing: ' + ', '.join(missing)})
+        system_started = True
+        print('[HMI] System STARTED via API', flush=True)
+        return jsonify({'status': 'success', 'message': 'System started', 'system_started': True})
+    elif action == 'stop':
+        system_started = False
+        print('[HMI] System STOPPED via API', flush=True)
+        return jsonify({'status': 'success', 'message': 'System stopped', 'system_started': False})
+    return jsonify({'status': 'error', 'message': 'Unknown action. Use start or stop.'})
 
 @app.route('/tl_panel', methods=['GET', 'POST'])
 def tl_panel_route():
@@ -1127,6 +1184,7 @@ def mode2_config_api():
                     mode2_cam_config[lane] = new_src
                     changed.append(lane)
         if changed:
+            save_mode2_cameras(mode2_cam_config)
             for lane in changed:
                 start_mode2_direction(lane)
         return jsonify({'status': 'success', 'updated': changed, 'config': mode2_cam_config})

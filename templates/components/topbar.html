@@ -1,32 +1,46 @@
 <!-- TOPBAR -->
     <header id="topbar">
         <div class="tb-stat">
-            <span class="tb-stat-label">CONTROLLER STATUS</span>
+            <span class="tb-stat-label">CONTROLLER</span>
             <span class="tb-stat-value red" id="tb-control-status">OFFLINE</span>
         </div>
-        <div class="tb-stat">
+        <div class="tb-stat" style="border-left:1px solid var(--border);">
+            <span class="tb-stat-label">SYSTEM</span>
+            <span class="tb-stat-value red" id="tb-system-status">STOPPED</span>
+        </div>
+        <div class="tb-stat" style="border-left:1px solid var(--border);">
+            <span class="tb-stat-label">DETECTION</span>
+            <span class="tb-stat-value" id="tb-detect-status" style="color:var(--text-dim)">INACTIVE</span>
+        </div>
+        <div class="tb-stat" style="border-left:1px solid var(--border);">
             <span class="tb-stat-label">PHASE LANE</span>
             <span class="tb-stat-value yellow" id="tb-phase-lane">--</span>
         </div>
-        <div class="tb-stat">
+        <div class="tb-stat" style="border-left:1px solid var(--border);">
             <span class="tb-stat-label">CYCLE TIMER</span>
             <span class="tb-stat-value" id="tb-cycle-timer">--s</span>
         </div>
-        <div class="tb-stat">
-            <span class="tb-stat-label">TOTAL VEHICLES</span>
+        <div class="tb-stat" style="border-left:1px solid var(--border);">
+            <span class="tb-stat-label">TOTAL VEH</span>
             <span class="tb-stat-value" id="tb-total-veh">0</span>
         </div>
-        <div class="tb-stat">
+        <div class="tb-stat" style="border-left:1px solid var(--border);">
             <span class="tb-stat-label">HOST</span>
-            <span class="tb-stat-value" id="tb-host" style="font-size:11px">localhost:2000</span>
+            <span class="tb-stat-value" id="tb-host" style="font-size:10px">--:--</span>
         </div>
         <div class="tb-sep"></div>
-
         <div class="tb-controls">
             <span class="tb-fs-label">FS</span>
             <button class="tb-fs-btn" id="fs-dec">-</button>
             <span class="tb-fs-val" id="fs-val">13</span>
             <button class="tb-fs-btn" id="fs-inc">+</button>
+        </div>
+        <div class="tb-controls" style="border-left:1px solid var(--border); padding:0 10px;">
+            <button id="tb-toggle-local" style="
+                background:none; border:1px solid var(--border); color:var(--text-dim);
+                font-family:'Share Tech Mono',monospace; font-size:10px; padding:3px 8px;
+                cursor:pointer; letter-spacing:0.1em; transition:all 0.2s; white-space:nowrap;
+            ">AUTO</button>
         </div>
         <div class="tb-clock">
             <span class="tb-clock-time" id="tb-time">--:--:--</span>

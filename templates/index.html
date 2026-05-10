@@ -124,24 +124,38 @@
             letter-spacing: 0.1em;
         }
 
-        .tb-fs-btn {
+        .tb-fs-btn, .tb-local-btn {
             background: var(--bg-2);
             border: 1px solid var(--border);
             color: var(--text-mid);
             font-family: 'Share Tech Mono', monospace;
             font-size: calc(var(--fs-base) + 1px);
-            width: 26px;
             height: 26px;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: border-color 0.15s, color 0.15s;
+            transition: border-color 0.15s, color 0.15s, background 0.15s;
         }
 
-        .tb-fs-btn:hover {
+        .tb-fs-btn {
+            width: 26px;
+        }
+
+        .tb-local-btn {
+            min-width: 50px;
+            padding: 0 8px;
+        }
+
+        .tb-fs-btn:hover,
+        .tb-local-btn:hover {
             border-color: var(--cyan);
             color: var(--cyan);
+        }
+
+        .tb-local-btn.active {
+            border-color: var(--green);
+            color: var(--green);
         }
 
         .tb-fs-val {
@@ -1765,16 +1779,14 @@
             <span class="tb-stat-value" id="tb-host" style="font-size:11px">localhost:2000</span>
         </div>
         <div class="tb-sep"></div>
-        <!-- MODE SWITCHER -->
-        <div class="mode-tabs">
-            <button class="mode-tab active" id="mode-tab-1" onclick="switchMode(1)">MODE 1</button>
-            <button class="mode-tab" id="mode-tab-2" onclick="switchMode(2)">MODE 2</button>
-        </div>
+        <!-- MODE SWITCHER (REMOVED) -->
+        <div class="mode-tabs" style="display:none;"></div>
         <div class="tb-controls">
             <span class="tb-fs-label">FS</span>
             <button class="tb-fs-btn" id="fs-dec">-</button>
             <span class="tb-fs-val" id="fs-val">13</span>
             <button class="tb-fs-btn" id="fs-inc">+</button>
+            <button class="tb-local-btn" id="tb-toggle-local" title="Toggle local manual traffic light control">AUTO</button>
         </div>
         <div class="tb-clock">
             <span class="tb-clock-time" id="tb-time">--:--:--</span>
@@ -2134,11 +2146,6 @@
         <div class="m2-tabs">
             <div class="m2-tab active" id="m2-tab-config" onclick="switchM2Tab('config')">CONFIGURE INPUTS</div>
             <div class="m2-tab" id="m2-tab-main" onclick="switchM2Tab('main')">MAIN VIEW</div>
-            <div class="m2-tab-sep"></div>
-            <div class="m2-toggle-wrap">
-                <span class="m2-toggle-label">CONTROL MODE:</span>
-                <button class="m2-mode-btn" id="m2-mode-toggle" onclick="toggleControlMode()">FIXED CYCLE</button>
-            </div>
             <div class="m2-tab-sep"></div>
             <button class="m2-save-btn" id="m2-save-all">APPLY &amp; SAVE ALL</button>
         </div>
