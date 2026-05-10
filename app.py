@@ -256,7 +256,8 @@ mode2_rois       = load_mode2_rois()      # {lane: np.array (4,2)}
 mode2_frames     = {d: None for d in DIRECTIONS}  # {lane: jpeg_bytes (with detection overlay)}
 mode2_raw_frames = {}                     # {lane: raw np frame (for detection)}
 mode2_counts     = {d: 0 for d in DIRECTIONS}  # {lane: int}
-mode2_scores     = {d: 0 for d in DIRECTIONS}  # {lane: int} weighted scores
+mode2_scores     = {d: 0 for d in DIRECTIONS}  # {lane: int} weighted scores (emergencies)
+mode2_heavies    = {d: 0 for d in DIRECTIONS}  # {lane: int} heavy vehicles
 mode2_captures   = {}  # {lane: cv2.VideoCapture or urllib stream}
 mode2_threads    = {}  # {lane: Thread}
 
@@ -318,7 +319,7 @@ def _apply_detection_overlay(direction, frame):
     Runs YOLO detection on `frame` within the direction's ROI (if set).
     Updates mode2_counts[direction]. Returns annotated frame bytes.
     """
-    global model, mode2_rois, mode2_counts, mode2_scores, last_process_time
+    global model, mode2_rois, mode2_counts, mode2_scores, mode2_heavies, last_process_time
 
     last_process_time = time.time()
 
@@ -326,13 +327,15 @@ def _apply_detection_overlay(direction, frame):
     if direction in mode2_rois:
         roi_map[direction] = mode2_rois[direction]
 
-    annotated, counts, scores = process_frame(frame.copy(), model, roi_map)
+    annotated, counts, heavies, emergencies = process_frame(frame.copy(), model, roi_map)
     if roi_map:
         mode2_counts[direction] = counts.get(direction, 0)
-        mode2_scores[direction] = scores.get(direction, 0)
+        mode2_scores[direction] = emergencies.get(direction, 0)
+        mode2_heavies[direction] = heavies.get(direction, 0)
     else:
         mode2_counts[direction] = 0
         mode2_scores[direction] = 0
+        mode2_heavies[direction] = 0
 
     _, buf = cv2.imencode('.jpg', annotated)
     return buf.tobytes()
@@ -688,6 +691,7 @@ def mode2_traffic_control_loop():
 
             counts = {d: mode2_counts.get(d, 0) for d in DIRECTIONS}
             scores = {d: mode2_scores.get(d, 0) for d in DIRECTIONS}
+            heavies = {d: mode2_heavies.get(d, 0) for d in DIRECTIONS}
 
             # Always load latest config
             current_config = load_config()
@@ -708,7 +712,8 @@ def mode2_traffic_control_loop():
             control_traffic_lights_logic(
                 control_url, counts, TL_IDS,
                 cycle_timer=cycle_time,
-                lane_scores=scores
+                lane_scores=scores,
+                lane_heavies=heavies
             )
 
             time.sleep(1.0)
@@ -731,7 +736,11 @@ def traffic_control():
 def api_lane_counts():
     global lane_counts, connection_status, last_process_time
     auto_data = get_automation_data()
+    control_mode = auto_data.get("control_mode", 1)
     cycle_time = float(config.get('cycle_timer', 30.0))
+    if control_mode == 2:
+        cycle_time = auto_data.get("current_max_green", cycle_time)
+
     if auto_data.get("is_yellow_phase"):
         remaining = max(0, int(3.0 - (time.time() - auto_data["last_switch_time"])))
         current_cycle = 3.0
@@ -787,22 +796,41 @@ def api_lane_counts():
 
 @app.route('/api/intensity_scores')
 def api_intensity_scores():
-    """Returns per-lane intensity scores and wait times from the detection module."""
+    """Returns per-lane intensity scores and wait times using the Advanced Adaptive AI Traffic Control Algorithm."""
     from detection import automation_state
     scores = {}
     wait_times = {}
-    COUNT_WEIGHT = 5.0
-    WAIT_WEIGHT = 1.0
+    green_timers = {}
+    
+    current_lane = automation_state.get("current_green_lane")
+    last_switch = automation_state.get("last_switch_time", 0)
+    time_since_last = time.time() - last_switch if last_switch else 0
+    
     for lane in DIRECTIONS:
-        cnt  = mode2_counts.get(lane, 0)
-        wait = automation_state.get("wait_times", {}).get(lane, 0.0)
-        score = (cnt * COUNT_WEIGHT) + (wait * WAIT_WEIGHT) + mode2_scores.get(lane, 0) * 10
-        scores[lane]    = round(score, 1)
-        wait_times[lane] = round(wait, 1)
+        V = mode2_counts.get(lane, 0)
+        H = mode2_heavies.get(lane, 0)
+        E = mode2_scores.get(lane, 0) # Emergency counts
+        W = automation_state.get("wait_times", {}).get(lane, 0.0)
+        
+        D = min(1.0, (V + H * 2.0) / 10.0)
+        Q = V
+        F = V / 10.0
+        C = 10 if (lane == current_lane and time_since_last < 5.0) else 0
+        
+        score = (2 * V) + (4 * H) + (0.7 * W) + (5 * D) + (2 * Q) + (1 * F) - C
+        score += (E * 50)
+        
+        dynamic_green = 10 + (1.2 * V) + (10 * D) + (0.3 * W)
+        
+        scores[lane] = round(score, 1)
+        wait_times[lane] = round(W, 1)
+        green_timers[lane] = round(min(90.0, max(10.0, dynamic_green)), 1)
+        
     return jsonify({
         "scores":     scores,
         "wait_times": wait_times,
-        "green_lane": automation_state.get("current_green_lane"),
+        "green_timers": green_timers,
+        "green_lane": current_lane,
         "is_yellow":  automation_state.get("is_yellow_phase", False),
         "system_started": system_started,
     })

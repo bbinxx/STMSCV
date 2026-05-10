@@ -49,7 +49,8 @@ def process_frame(frame, model, rois, conf_thres=0.20, iou_thres=0.45, img_size=
     import threading
 
     lane_counts = {k: 0 for k in rois.keys()}
-    lane_scores  = {k: 0 for k in rois.keys()}
+    heavy_counts = {k: 0 for k in rois.keys()}
+    emergency_counts = {k: 0 for k in rois.keys()}
 
     # ── Draw ROI overlays on the full frame ───────────────────────────────────
     if rois:
@@ -66,7 +67,7 @@ def process_frame(frame, model, rois, conf_thres=0.20, iou_thres=0.45, img_size=
         cv2.addWeighted(overlay, 0.15, frame, 0.85, 0, frame)
 
     if model is None or not rois:
-        return frame, lane_counts, lane_scores
+        return frame, lane_counts, heavy_counts, emergency_counts
 
     # ── Thread-safe YOLO lock ─────────────────────────────────────────────────
     if not hasattr(model, _YOLO_LOCK_ATTR):
@@ -105,18 +106,15 @@ def process_frame(frame, model, rois, conf_thres=0.20, iou_thres=0.45, img_size=
                 if not any(kw in cls_name for kw in VEHICLE_KEYWORDS):
                     continue
 
-            weight = CLASS_WEIGHT.get(cls, 1)
+            # Heavy vehicles: bus, truck, train, boat (classes 5,6,7,8)
+            is_heavy = cls in [5, 6, 7, 8]
+            is_emergency = any(kw in cls_name for kw in ['ambulance', 'fire', 'emergency', 'police'])
 
-            # Anchor check: Geometric center of the bounding box.
-            # Using the absolute bottom edge (cy2) often fails because bounding
-            # boxes include vehicle shadows or extra padding that pushes the bottom
-            # edge outside the tightly drawn ROI polygons.
+            # Anchor check
             fcx = (cx1 + cx2) / 2.0
             fcy = (cy1 + cy2) / 2.0
             anchor_pt = (float(fcx), float(fcy))
 
-            # Find if this vehicle is inside ANY ROI
-            is_emergency = any(kw in cls_name for kw in ['ambulance', 'fire', 'emergency', 'police'])
             matched_lane = None
             
             for lane_name, roi_pts in rois.items():
@@ -124,19 +122,21 @@ def process_frame(frame, model, rois, conf_thres=0.20, iou_thres=0.45, img_size=
                     continue
                 roi_poly = roi_pts.astype(np.float32)
                 
-                # Check strictly against the center point
                 inside = cv2.pointPolygonTest(roi_poly, anchor_pt, False) >= 0
                 
                 if inside:
                     matched_lane = lane_name
                     lane_counts[lane_name] += 1
-                    lane_scores[lane_name] += weight * (5 if is_emergency else 1)
-                    break # count in the first matched lane
+                    if is_heavy:
+                        heavy_counts[lane_name] += 1
+                    if is_emergency:
+                        emergency_counts[lane_name] += 1
+                    break 
             
             if matched_lane:
                 if is_emergency:
                     color = (0, 0, 255)
-                elif cls in [1, 3]:   # bicycle / motorcycle
+                elif cls in [1, 3]:
                     color = (255, 200, 0)
                 else:
                     color = (0, 255, 0)
@@ -151,7 +151,7 @@ def process_frame(frame, model, rois, conf_thres=0.20, iou_thres=0.45, img_size=
                 cv2.putText(frame, label, (cx1, cy1 - 10),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
-    return frame, lane_counts, lane_scores
+    return frame, lane_counts, heavy_counts, emergency_counts
 
 # --- Consolidated Traffic Control State ---
 automation_state = {
@@ -164,11 +164,11 @@ automation_state = {
     "last_tick_time": 0.0
 }
 
-def control_traffic_lights_logic(control_url, counts, tl_ids, cycle_timer=30.0, lane_scores=None):
+def control_traffic_lights_logic(control_url, counts, tl_ids, cycle_timer=30.0, lane_scores=None, lane_heavies=None):
     """
-    Advanced Intensity-Based Algorithm:
-    Decides the green lane based on 'Intensity Score' = (Vehicle Count * 5) + (Wait Time in seconds).
-    This prevents busy lanes from starving smaller ones while prioritizing density.
+    Advanced Adaptive AI Traffic Control Algorithm
+    Dynamically decides the green lane based on Score:
+    Score = (2*V) + (4*H) + (0.7*W) + (5*D) + (2*Q) + (1*F) - C
     """
     global automation_state
     
@@ -176,15 +176,10 @@ def control_traffic_lights_logic(control_url, counts, tl_ids, cycle_timer=30.0, 
     import requests
     import threading
 
-    if lane_scores is None:
-        lane_scores = {}
+    if lane_scores is None: lane_scores = {}
+    if lane_heavies is None: lane_heavies = {}
     
     LANE_ORDER = ["North", "East", "South", "West"]
-    MIN_GREEN_TIME = 5.0    # Minimum time to keep a lane green
-    MAX_GREEN_TIME = 60.0   # Maximum time before forcing a switch if others are waiting
-    WAIT_WEIGHT = 1.0       # Points per second of waiting
-    COUNT_WEIGHT = 5.0      # Points per vehicle detected
-    
     current_time = time.time()
     
     # Initialize timing
@@ -199,11 +194,11 @@ def control_traffic_lights_logic(control_url, counts, tl_ids, cycle_timer=30.0, 
     # 1. Update Wait Times for Red Lanes
     for lane in LANE_ORDER:
         if lane == automation_state["current_green_lane"]:
-            automation_state["wait_times"][lane] = 0.0 # Reset wait time for green lane
+            automation_state["wait_times"][lane] = 0.0 # Reset wait time
         elif counts.get(lane, 0) > 0:
-            automation_state["wait_times"][lane] += dt # Accumulate wait time if vehicles are present
+            automation_state["wait_times"][lane] += dt # Accumulate
         else:
-            automation_state["wait_times"][lane] = 0.0 # No vehicles = no waiting
+            automation_state["wait_times"][lane] = 0.0 # No vehicles = no wait
 
     # Handle Yellow Phase transition
     if automation_state["is_yellow_phase"]:
@@ -214,61 +209,82 @@ def control_traffic_lights_logic(control_url, counts, tl_ids, cycle_timer=30.0, 
             print(f"[AUTO] Phase Shift: {automation_state['current_green_lane']} is now GREEN", flush=True)
         return
 
-    # Force ALL-RED when no vehicles are detected
+    # Force ALL-RED when no vehicles are detected anywhere
     if sum(counts.values()) == 0:
         if automation_state["current_green_lane"] is not None:
-            print("[AUTO] Clearing intersection — No vehicles detected", flush=True)
+            print("[AUTO] Idle Mode — No vehicles detected. Intersection clear.", flush=True)
             automation_state["current_green_lane"] = None
             automation_state["last_switch_time"] = current_time
         return
 
-    # 2. Decision Logic
+    # 2. Advanced Decision Logic
     time_since_last = current_time - automation_state["last_switch_time"]
     current_lane = automation_state["current_green_lane"]
     
-    # Calculate Intensity Scores
+    # Calculate Intensity Scores and Adaptive Timers
     intensity_scores = {}
+    green_timers = {}
+    
     for lane in LANE_ORDER:
-        cnt = counts.get(lane, 0)
-        wait = automation_state["wait_times"].get(lane, 0.0)
-        # Score combines density and wait time
-        score = (cnt * COUNT_WEIGHT) + (wait * WAIT_WEIGHT)
-        # Add boost from specific lane_scores (e.g. emergency vehicles)
-        score += lane_scores.get(lane, 0) * 10
+        V = counts.get(lane, 0)
+        H = lane_heavies.get(lane, 0)
+        W = automation_state["wait_times"].get(lane, 0.0)
+        E = lane_scores.get(lane, 0)  # Emergency vehicles
+        
+        # Approximations for advanced metrics:
+        D = min(1.0, (V + H * 2.0) / 10.0)  # Density (0 to 1 scale, max 10 equivalent cars)
+        Q = V  # Queue length
+        F = V / 10.0  # Flow rate proxy
+        C = 10 if (lane == current_lane and time_since_last < 5.0) else 0 # Cooldown
+        
+        # Score = (2 * V) + (4 * H) + (0.7 * W) + (5 * D) + (2 * Q) + (1 * F) - C
+        score = (2 * V) + (4 * H) + (0.7 * W) + (5 * D) + (2 * Q) + (1 * F) - C
+        score += (E * 50)  # Massive override for emergencies
+        
         intensity_scores[lane] = score
+        
+        # Dynamic GreenTime = 10 + (1.2 * V) + (10 * D) + (0.3 * W)
+        dynamic_green = 10 + (1.2 * V) + (10 * D) + (0.3 * W)
+        green_timers[lane] = min(90.0, max(10.0, dynamic_green))
 
-    # Find the lane with the highest intensity
+    # Find the lane with the highest priority
     sorted_lanes = sorted(intensity_scores.items(), key=lambda x: x[1], reverse=True)
     best_lane, best_score = sorted_lanes[0]
-
+    
     next_lane = None
     
-    # Switch conditions:
     if current_lane not in LANE_ORDER:
-        # No active green, pick the best
+        # Recovery from ALL-RED
         next_lane = best_lane
-    elif counts.get(current_lane, 0) == 0:
-        # Current lane is empty, switch to best lane with vehicles
-        if best_score > 0:
+    else:
+        current_score = intensity_scores.get(current_lane, 0)
+        current_max_green = green_timers.get(current_lane, 10.0)
+        automation_state["current_max_green"] = current_max_green  # Expose for UI
+        
+        # Condition 1: Current lane is empty -> Switch immediately to best
+        if counts.get(current_lane, 0) == 0 and best_score > 0:
             next_lane = best_lane
-            print(f"[AUTO] Current lane empty -> Switching to {best_lane} (Score: {best_score:.1f})", flush=True)
-    elif time_since_last >= MIN_GREEN_TIME:
-        # Check if we should switch based on priority or max time
-        if time_since_last >= MAX_GREEN_TIME:
-            next_lane = best_lane
-            print(f"[AUTO] Max Green Time reached -> Switching to {best_lane}", flush=True)
-        elif best_lane != current_lane:
-            # Switch if the best lane has a significantly higher score (Hysteresis to avoid flickering)
-            current_score = intensity_scores.get(current_lane, 0)
-            if best_score > current_score * 1.5 or (best_score > current_score + 20):
+            print(f"[AUTO] Current lane empty -> Switching to {best_lane}", flush=True)
+            
+        # Condition 2: Max green time reached -> Force switch if others waiting
+        elif time_since_last >= current_max_green:
+            if best_lane != current_lane and best_score > 0:
                 next_lane = best_lane
-                print(f"[AUTO] Intensity Shift: {current_lane}({current_score:.1f}) -> {best_lane}({best_score:.1f})", flush=True)
+                print(f"[AUTO] Max Green Time ({current_max_green:.1f}s) reached -> Switching to {best_lane}", flush=True)
+                
+        # Condition 3: Starvation / Heavy Traffic Shift -> Threshold based to prevent oscillation
+        elif time_since_last >= 5.0: # Minimum green time
+            if best_lane != current_lane:
+                threshold = 15.0 # SwitchOnlyIf = NewScore > CurrentScore + Threshold
+                if best_score > (current_score + threshold):
+                    next_lane = best_lane
+                    print(f"[AUTO] Dynamic Priority Shift: {current_lane}({current_score:.1f}) -> {best_lane}({best_score:.1f})", flush=True)
 
     if next_lane and next_lane != current_lane:
         automation_state["is_yellow_phase"] = True
         automation_state["yellow_trigger_lane"] = next_lane
         automation_state["last_switch_time"] = current_time
-        print(f"[AUTO] Yellow Phase: Transitioning to {next_lane}...", flush=True)
+        print(f"[AUTO] Transitioning to {next_lane}...", flush=True)
 
     # 3. Apply via HTTP API to TRAFFIC_API (skip if not connected or no TL IDs set)
     if control_url is None or not any(tl_ids.values()):
