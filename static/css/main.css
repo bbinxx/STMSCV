@@ -1,17 +1,4 @@
-<!DOCTYPE html>
-<html lang="en">
-
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TRAFFIC HMI / CONTROLLER CONTROL PANEL</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link
-        href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&display=swap"
-        rel="stylesheet">
-    <style>
-        :root {
+:root {
             --fs-base: 13px;
             --sb-width: 72px;
             --tb-height: 48px;
@@ -124,38 +111,24 @@
             letter-spacing: 0.1em;
         }
 
-        .tb-fs-btn, .tb-local-btn {
+        .tb-fs-btn {
             background: var(--bg-2);
             border: 1px solid var(--border);
             color: var(--text-mid);
             font-family: 'Share Tech Mono', monospace;
             font-size: calc(var(--fs-base) + 1px);
+            width: 26px;
             height: 26px;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: border-color 0.15s, color 0.15s, background 0.15s;
+            transition: border-color 0.15s, color 0.15s;
         }
 
-        .tb-fs-btn {
-            width: 26px;
-        }
-
-        .tb-local-btn {
-            min-width: 50px;
-            padding: 0 8px;
-        }
-
-        .tb-fs-btn:hover,
-        .tb-local-btn:hover {
+        .tb-fs-btn:hover {
             border-color: var(--cyan);
             color: var(--cyan);
-        }
-
-        .tb-local-btn.active {
-            border-color: var(--green);
-            color: var(--green);
         }
 
         .tb-fs-val {
@@ -1069,7 +1042,12 @@
             background: var(--bg-1);
             border-bottom: 1px solid var(--border);
             flex-shrink: 0;
+            overflow-x: auto;
+            overflow-y: hidden;
+            scrollbar-width: none;
+            min-height: 44px;
         }
+        .m2-tabs::-webkit-scrollbar { display: none; }
 
         .m2-tab {
             padding: 10px 22px;
@@ -1458,7 +1436,7 @@
 
         /* ===== REALISTIC TRAFFIC LIGHT PANEL (MODE 2) ===== */
         .m2-tl-panel {
-            width: 88px;
+            width: 84px;
             background: linear-gradient(180deg, #0c0e14 0%, #111520 100%);
             border-left: 1px solid var(--border);
             display: flex;
@@ -1491,7 +1469,7 @@
 
         /* Main housing body */
         .m2-tl-body {
-            width: 58px;
+            width: 54px;
             background: linear-gradient(160deg, #1c2132 0%, #0d1018 60%, #151b28 100%);
             border: 1px solid rgba(255,255,255,0.07);
             border-radius: 6px;
@@ -1505,9 +1483,10 @@
             align-items: center;
             gap: 2px;
             flex-shrink: 0;
+            position: relative;
         }
 
-        /* Visor shade strip */
+        /* Visor / shade strip at top of housing */
         .m2-tl-visor {
             width: 100%;
             height: 5px;
@@ -1527,8 +1506,8 @@
 
         /* Single bulb */
         .m2-tl-bulb {
-            width: 34px;
-            height: 34px;
+            width: 32px;
+            height: 32px;
             border-radius: 50%;
             background: radial-gradient(circle at 38% 35%, #222 0%, #111 70%, #0a0a0a 100%);
             border: 1px solid rgba(255,255,255,0.06);
@@ -1539,101 +1518,132 @@
             position: relative;
             flex-shrink: 0;
         }
-        /* Lens glare */
+
+        /* Lens glare dot */
         .m2-tl-bulb::after {
             content: '';
             position: absolute;
-            top: 20%; left: 26%;
-            width: 30%; height: 20%;
+            top: 20%;
+            left: 26%;
+            width: 30%;
+            height: 20%;
             background: rgba(255,255,255,0.08);
             border-radius: 50%;
             transform: rotate(-30deg);
             pointer-events: none;
         }
+
         /* RED ON */
         .m2-tl-bulb.lit-red {
             background: radial-gradient(circle at 38% 35%, #ff6670 0%, #f03050 45%, #900020 100%);
-            box-shadow: 0 0 14px 4px rgba(240,48,80,0.7), 0 0 36px 8px rgba(240,48,80,0.3),
-                        inset 0 2px 4px rgba(255,180,180,0.15);
+            box-shadow:
+                0 0 14px 4px rgba(240, 48, 80, 0.65),
+                0 0 36px 8px rgba(240, 48, 80, 0.25),
+                inset 0 2px 4px rgba(255,180,180,0.15);
             animation: tl-pulse-red 1.8s ease-in-out infinite;
         }
+
         /* YELLOW ON */
         .m2-tl-bulb.lit-yellow {
             background: radial-gradient(circle at 38% 35%, #ffe066 0%, #f5c400 45%, #9a7a00 100%);
-            box-shadow: 0 0 14px 4px rgba(245,196,0,0.75), 0 0 36px 8px rgba(245,196,0,0.3),
-                        inset 0 2px 4px rgba(255,240,120,0.15);
+            box-shadow:
+                0 0 14px 4px rgba(245, 196, 0, 0.7),
+                0 0 36px 8px rgba(245, 196, 0, 0.28),
+                inset 0 2px 4px rgba(255,240,120,0.15);
             animation: tl-pulse-yellow 0.9s ease-in-out infinite;
         }
+
         /* GREEN ON */
         .m2-tl-bulb.lit-green {
             background: radial-gradient(circle at 38% 35%, #5fffaa 0%, #00e87a 45%, #006635 100%);
-            box-shadow: 0 0 14px 4px rgba(0,232,122,0.7), 0 0 36px 8px rgba(0,232,122,0.28),
-                        inset 0 2px 4px rgba(120,255,190,0.15);
+            box-shadow:
+                0 0 14px 4px rgba(0, 232, 122, 0.65),
+                0 0 36px 8px rgba(0, 232, 122, 0.25),
+                inset 0 2px 4px rgba(120,255,190,0.15);
             animation: tl-pulse-green 2.4s ease-in-out infinite;
         }
+
         @keyframes tl-pulse-red {
-            0%,100% { box-shadow: 0 0 14px 4px rgba(240,48,80,0.7), 0 0 36px 8px rgba(240,48,80,0.3); }
-            50%      { box-shadow: 0 0 22px 9px rgba(240,48,80,1.0), 0 0 52px 16px rgba(240,48,80,0.5); }
+            0%,100% { box-shadow: 0 0 14px 4px rgba(240,48,80,0.65), 0 0 36px 8px rgba(240,48,80,0.25); }
+            50%      { box-shadow: 0 0 20px 8px rgba(240,48,80,0.9),  0 0 50px 14px rgba(240,48,80,0.4); }
         }
         @keyframes tl-pulse-yellow {
-            0%,100% { box-shadow: 0 0 14px 4px rgba(245,196,0,0.75), 0 0 36px 8px rgba(245,196,0,0.3); opacity:1; }
-            50%      { box-shadow: 0 0 24px 11px rgba(245,196,0,1.0), 0 0 58px 18px rgba(245,196,0,0.55); opacity:0.8; }
+            0%,100% { box-shadow: 0 0 14px 4px rgba(245,196,0,0.7), 0 0 36px 8px rgba(245,196,0,0.28); opacity:1; }
+            50%      { box-shadow: 0 0 22px 10px rgba(245,196,0,1.0), 0 0 55px 18px rgba(245,196,0,0.5); opacity:0.8; }
         }
         @keyframes tl-pulse-green {
-            0%,100% { box-shadow: 0 0 14px 4px rgba(0,232,122,0.7), 0 0 36px 8px rgba(0,232,122,0.28); }
-            50%      { box-shadow: 0 0 22px 9px rgba(0,232,122,1.0), 0 0 52px 15px rgba(0,232,122,0.45); }
+            0%,100% { box-shadow: 0 0 14px 4px rgba(0,232,122,0.65), 0 0 36px 8px rgba(0,232,122,0.25); }
+            50%      { box-shadow: 0 0 20px 8px rgba(0,232,122,0.9),  0 0 50px 14px rgba(0,232,122,0.4); }
         }
 
-        /* Countdown bar */
+        /* Countdown bar under the housing */
         .m2-tl-countdown-wrap {
-            width: 56px; height: 4px;
+            width: 52px;
+            height: 4px;
             background: rgba(255,255,255,0.05);
-            border-radius: 2px; margin-top: 5px;
-            overflow: hidden; flex-shrink: 0;
+            border-radius: 2px;
+            margin-top: 5px;
+            overflow: hidden;
+            flex-shrink: 0;
         }
+
         .m2-tl-countdown-bar {
-            height: 100%; width: 0%;
-            background: var(--green); border-radius: 2px;
+            height: 100%;
+            width: 0%;
+            background: var(--green);
+            border-radius: 2px;
             transition: width 0.9s linear, background 0.5s;
         }
-        .m2-tl-countdown-bar.warn  { background: var(--yellow); }
-        .m2-tl-countdown-bar.critical { background: var(--red); }
+
+        .m2-tl-countdown-bar.warn {
+            background: var(--yellow);
+        }
+
+        .m2-tl-countdown-bar.critical {
+            background: var(--red);
+        }
 
         /* Vehicle count */
         .m2-tl-stats {
-            display: flex; flex-direction: column;
-            align-items: center; margin-top: 6px; gap: 0;
-        }
-        .m2-count-lbl {
-            font-family: 'Share Tech Mono', monospace;
-            font-size: calc(var(--fs-base) + 2px);
-            color: var(--text-bright); line-height: 1;
-        }
-        .m2-count-sub {
-            font-family: 'Share Tech Mono', monospace;
-            font-size: calc(var(--fs-base) - 5px);
-            color: var(--text-dim); letter-spacing: 0.15em;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 6px;
+            gap: 0;
         }
 
-        /* Traffic load bar */
+        /* Load bar (relative traffic proportion) */
         .m2-tl-load-wrap {
-            width: 56px; height: 5px;
+            width: 52px;
+            height: 5px;
             background: rgba(255,255,255,0.05);
-            border-radius: 3px; margin-top: 4px;
-            overflow: hidden; flex-shrink: 0;
+            border-radius: 3px;
+            margin-top: 4px;
+            overflow: hidden;
+            flex-shrink: 0;
         }
+
         .m2-tl-load-bar {
-            height: 100%; width: 0%;
-            background: var(--cyan); border-radius: 3px;
+            height: 100%;
+            width: 0%;
+            background: var(--cyan);
+            border-radius: 3px;
             transition: width 0.7s ease, background 0.4s;
         }
-        .m2-tl-load-bar.hi  { background: var(--red); }
-        .m2-tl-load-bar.med { background: var(--amber); }
 
-        /* Priority badge (overlay on video) */
+        .m2-tl-load-bar.hi {
+            background: var(--red);
+        }
+
+        .m2-tl-load-bar.med {
+            background: var(--amber);
+        }
+
+        /* ===== PRIORITY BADGES (overlay on video) ===== */
         .m2-priority-badge {
             position: absolute;
-            top: 6px; right: 6px;
+            top: 6px;
+            right: 6px;
             font-family: 'Share Tech Mono', monospace;
             font-size: calc(var(--fs-base) - 3px);
             font-weight: bold;
@@ -1647,14 +1657,47 @@
             display: none;
             white-space: nowrap;
         }
+
         .m2-priority-badge.rank-1 {
-            display: block; color: #ffd700; border-color: #ffd700;
+            display: block;
+            color: #ffd700;
+            border-color: #ffd700;
             text-shadow: 0 0 8px rgba(255,215,0,0.8);
             box-shadow: 0 0 10px rgba(255,215,0,0.25);
         }
-        .m2-priority-badge.rank-2 { display: block; color: #c0c8d8; border-color: #8090a8; }
-        .m2-priority-badge.rank-3 { display: block; color: #cd7f32; border-color: #9a5c24; }
-        .m2-priority-badge.rank-4 { display: block; color: var(--text-dim); border-color: var(--border); }
+
+        .m2-priority-badge.rank-2 {
+            display: block;
+            color: #c0c8d8;
+            border-color: #8090a8;
+        }
+
+        .m2-priority-badge.rank-3 {
+            display: block;
+            color: #cd7f32;
+            border-color: #9a5c24;
+        }
+
+        .m2-priority-badge.rank-4 {
+            display: block;
+            color: var(--text-dim);
+            border-color: var(--border);
+        }
+
+        /* Count label inside TL stats block */
+        .m2-count-lbl {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) + 2px);
+            color: var(--text-bright);
+            line-height: 1;
+        }
+
+        .m2-count-sub {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 5px);
+            color: var(--text-dim);
+            letter-spacing: 0.15em;
+        }
 
         .m2-toggle-wrap {
             display: flex;
@@ -1714,695 +1757,3 @@
                 --fs-base: 10px;
             }
         }
-    </style>
-</head>
-
-<body>
-
-    <!-- SIDEBAR -->
-    <nav id="sidebar">
-        <div class="sb-brand">
-            <span class="sb-brand-code">HMI</span>
-            <span class="sb-brand-sub">v2.4.1</span>
-        </div>
-        <div class="sb-buttons">
-            <button class="sb-btn" id="sb-dash" data-win="win-dashboard">
-                <span class="sb-btn-code">DSH</span>
-                <span class="sb-btn-label">Dashboard</span>
-            </button>
-            <button class="sb-btn" id="sb-conn" data-win="win-connection">
-                <span class="sb-btn-code">CON</span>
-                <span class="sb-btn-label">Connection</span>
-            </button>
-            <div class="sb-divider"></div>
-            <button class="sb-btn" id="sb-roi" data-win="win-roi">
-                <span class="sb-btn-code">ROI</span>
-                <span class="sb-btn-label">Zones</span>
-            </button>
-            <button class="sb-btn" id="sb-tl" data-win="win-tl">
-                <span class="sb-btn-code">TRL</span>
-                <span class="sb-btn-label">Traf.Lts</span>
-            </button>
-            <div class="sb-divider"></div>
-            <button class="sb-btn" id="sb-live" data-win="win-live">
-                <span class="sb-btn-code">LIV</span>
-                <span class="sb-btn-label">Live Feed</span>
-            </button>
-            <div class="sb-divider"></div>
-            <button class="sb-btn" id="sb-mode2">
-                <span class="sb-btn-code">M2</span>
-                <span class="sb-btn-label">Multi-Cam</span>
-            </button>
-        </div>
-    </nav>
-
-    <!-- TOPBAR -->
-    <header id="topbar">
-        <div class="tb-stat">
-            <span class="tb-stat-label">CONTROLLER STATUS</span>
-            <span class="tb-stat-value red" id="tb-control-status">OFFLINE</span>
-        </div>
-        <div class="tb-stat">
-            <span class="tb-stat-label">PHASE LANE</span>
-            <span class="tb-stat-value yellow" id="tb-phase-lane">--</span>
-        </div>
-        <div class="tb-stat">
-            <span class="tb-stat-label">CYCLE TIMER</span>
-            <span class="tb-stat-value" id="tb-cycle-timer">--s</span>
-        </div>
-        <div class="tb-stat">
-            <span class="tb-stat-label">TOTAL VEHICLES</span>
-            <span class="tb-stat-value" id="tb-total-veh">0</span>
-        </div>
-        <div class="tb-stat">
-            <span class="tb-stat-label">HOST</span>
-            <span class="tb-stat-value" id="tb-host" style="font-size:11px">localhost:2000</span>
-        </div>
-        <div class="tb-sep"></div>
-        <!-- MODE SWITCHER (REMOVED) -->
-        <div class="mode-tabs" style="display:none;"></div>
-        <div class="tb-controls">
-            <span class="tb-fs-label">FS</span>
-            <button class="tb-fs-btn" id="fs-dec">-</button>
-            <span class="tb-fs-val" id="fs-val">13</span>
-            <button class="tb-fs-btn" id="fs-inc">+</button>
-            <button class="tb-local-btn" id="tb-toggle-local" title="Toggle local manual traffic light control">AUTO</button>
-        </div>
-        <div class="tb-clock">
-            <span class="tb-clock-time" id="tb-time">--:--:--</span>
-            <span class="tb-clock-date" id="tb-date">----/--/--</span>
-        </div>
-    </header>
-
-    <!-- CANVAS AREA -->
-    <div id="canvas">
-
-        <!-- WINDOW: Dashboard -->
-        <div class="fwin" id="win-dashboard" style="width:420px; top:30px; left:30px;">
-            <div class="fwin-titlebar">
-                <span class="fwin-title">[ TRAFFIC / DASHBOARD ]</span>
-                <button class="fwin-btn pin-btn" title="Pin">P</button>
-                <button class="fwin-btn close-btn" title="Close">X</button>
-            </div>
-            <div class="fwin-body">
-                <div class="section-head">LANE VEHICLE COUNTS</div>
-                <div class="lane-grid">
-                    <div class="lane-card" id="lane-card-North">
-                        <span class="lane-num" id="count-North">0</span>
-                        <span class="lane-lbl">NORTH</span>
-                    </div>
-                    <div class="lane-card" id="lane-card-South">
-                        <span class="lane-num" id="count-South">0</span>
-                        <span class="lane-lbl">SOUTH</span>
-                    </div>
-                    <div class="lane-card" id="lane-card-East">
-                        <span class="lane-num" id="count-East">0</span>
-                        <span class="lane-lbl">EAST</span>
-                    </div>
-                    <div class="lane-card" id="lane-card-West">
-                        <span class="lane-num" id="count-West">0</span>
-                        <span class="lane-lbl">WEST</span>
-                    </div>
-                </div>
-                <div class="section-head">PHASE TIMER</div>
-                <div class="phase-bar-wrap">
-                    <div class="phase-bar-head">
-                        <span class="phase-bar-label">CURRENT PHASE: <span id="ph-lane">--</span></span>
-                        <span class="phase-bar-val" id="ph-timer">--s</span>
-                    </div>
-                    <div class="phase-bar-track">
-                        <div class="phase-bar-fill" id="ph-bar" style="width:0%"></div>
-                    </div>
-                </div>
-                <div class="section-head">SYSTEM STATUS</div>
-                <div>
-                    <div class="status-row">
-                        <span class="status-key">CONTROLLER API</span>
-                        <span class="status-val"><span class="dot red" id="dot-control"></span><span
-                                id="stat-control">OFFLINE</span></span>
-                    </div>
-                    <div class="status-row">
-                        <span class="status-key">DETECTION</span>
-                        <span class="status-val"><span class="dot" id="dot-detect"></span><span
-                                id="stat-detect">INACTIVE</span></span>
-                    </div>
-                    <div class="status-row">
-                        <span class="status-key">LIVE FEED</span>
-                        <span class="status-val"><span class="dot" id="dot-feed"></span><span id="stat-feed">NO
-                                SIGNAL</span></span>
-                    </div>
-                    <div class="status-row">
-                        <span class="status-key">CONTROLLER</span>
-                        <span class="status-val"><span class="dot yellow" id="dot-ctrl"></span><span
-                                id="stat-ctrl">STANDBY</span></span>
-                    </div>
-                </div>
-            </div>
-            <div class="fwin-resize"></div>
-        </div>
-
-        <!-- WINDOW: Connection -->
-        <div class="fwin" id="win-connection" style="width:340px; top:30px; left:480px; display:none;">
-            <div class="fwin-titlebar">
-                <span class="fwin-title">[ CONNECTION / SETTINGS ]</span>
-                <button class="fwin-btn pin-btn" title="Pin">P</button>
-                <button class="fwin-btn close-btn" title="Close">X</button>
-            </div>
-            <div class="fwin-body">
-                <div class="section-head">FLASK SERVER</div>
-                <div class="form-grid-2">
-                    <div class="form-group">
-                        <label class="form-label">FLASK HOST</label>
-                        <input type="text" class="form-input" id="cfg-flask-host" placeholder="0.0.0.0">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">FLASK PORT</label>
-                        <input type="number" class="form-input" id="cfg-flask-port" placeholder="5050">
-                    </div>
-                </div>
-                <div class="section-head">TRAFFIC INPUTS & WORKFLOW</div>
-                <div class="form-group">
-                    <label class="form-label">CYCLE TIMER (S)</label>
-                    <input type="number" class="form-input" id="cfg-cycle-timer" placeholder="30" min="5">
-                    <small class="text-dim">Set how long each green phase should run (for automated mode).</small>
-                </div>
-                <div class="section-head">CONTROLLER API</div>
-                <div class="form-group">
-                    <label class="form-label">CONTROLLER HOST</label>
-                    <input type="text" class="form-input" id="cfg-controller-host" placeholder="127.0.0.1">
-                </div>
-                <div class="form-grid-2">
-                    <div class="form-group">
-                        <label class="form-label">CONTROLLER PORT</label>
-                        <input type="number" class="form-input" id="cfg-controller-port" placeholder="2000">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">TIMEOUT (S)</label>
-                        <input type="number" class="form-input" id="cfg-timeout" step="0.1" placeholder="3">
-                    </div>
-                </div>
-                <div class="form-group">
-                    <button class="btn btn-cyan" id="btn-test-api" type="button">TEST CONTROLLER API</button>
-                </div>
-                <div class="section-head">MODE 2 CAMERA MAPPING</div>
-                <div class="form-group">
-                    <label class="form-label">PASTE MULTI-CAM LINKS (one per line, optional direction prefix e.g. North=https://...)</label>
-                    <textarea class="form-input" id="cfg-mode2-links" style="height:90px; font-family: monospace; resize:vertical;"></textarea>
-                </div>
-                <div class="form-grid-2">
-                    <div class="form-group">
-                        <label class="form-label">NORTH SOURCE</label>
-                        <input type="text" class="form-input" id="mode2-north" placeholder="e.g. rtsp://...">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">SOUTH SOURCE</label>
-                        <input type="text" class="form-input" id="mode2-south" placeholder="e.g. rtsp://...">
-                    </div>
-                </div>
-                <div class="form-grid-2">
-                    <div class="form-group">
-                        <label class="form-label">EAST SOURCE</label>
-                        <input type="text" class="form-input" id="mode2-east" placeholder="e.g. rtsp://...">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">WEST SOURCE</label>
-                        <input type="text" class="form-input" id="mode2-west" placeholder="e.g. rtsp://...">
-                    </div>
-                </div>
-                <div class="form-group">
-                    <button class="btn btn-cyan" id="btn-apply-mode2-links" type="button">APPLY MODE2 LINKS</button>
-                </div>
-                <div class="section-head">DETECTION MODEL</div>
-                <div class="form-group">
-                    <label class="form-label">YOLO MODEL PATH</label>
-                    <input type="text" class="form-input" id="cfg-yolo" placeholder="yolov8n.pt">
-                </div>
-                <div style="margin-top:20px; display:flex; flex-direction:column; gap:8px;">
-                    <button class="btn btn-yellow" id="btn-save-only">SAVE CONFIG</button>
-                    <button class="btn btn-green" id="btn-toggle-connect">CONNECT</button>
-                    <button class="btn btn-cyan" id="btn-start-system">START SYSTEM</button>
-                    <button class="btn btn-red" id="btn-stop-system">STOP SYSTEM</button>
-                </div>
-                <div class="form-hint" style="margin-top:10px; text-align:center;">
-                    SERVER RUNNING ON PORT 5050
-                </div>
-            </div>
-            <div class="fwin-resize"></div>
-        </div>
-
-        <!-- WINDOW: ROI Setup -->
-        <div class="fwin" id="win-roi" style="width:720px; top:80px; left:100px; display:none;">
-            <div class="fwin-titlebar">
-                <span class="fwin-title">[ ROI / ZONE SETUP ]</span>
-                <button class="fwin-btn pin-btn" title="Pin">P</button>
-                <button class="fwin-btn close-btn" title="Close">X</button>
-            </div>
-            <div class="fwin-body" style="display:flex; gap:14px; padding:0;">
-                <!-- Left Sidebar: Saved Sets -->
-                <div
-                    style="width:180px; background:var(--bg-2); border-right:1px solid var(--border); display:flex; flex-direction:column;">
-                    <div class="section-head" style="padding:10px 14px 4px; margin-bottom:4px;">SAVED SETS</div>
-                    <div id="roi-sets-list" style="flex:1; overflow-y:auto; padding:6px 14px;">
-                        <span class="form-hint">No saved sets...</span>
-                    </div>
-                    <div style="padding:10px; border-top:1px solid var(--border);">
-                        <button class="btn btn-yellow btn-sm" id="roi-load-btn">LOAD SET</button>
-                    </div>
-                </div>
-
-                <!-- Main Content -->
-                <div style="flex:1; padding:14px;">
-                    <div style="display:flex; gap:10px; align-items:flex-end; margin-bottom:12px;">
-                        <div style="flex:2;">
-                            <label class="form-label">SET NAME</label>
-                            <input type="text" class="form-input" id="roi-set-name" placeholder="Intersection_01">
-                        </div>
-                        <div style="flex:1;">
-                            <label class="form-label">LANE</label>
-                            <select class="form-select" id="roi-lane">
-                                <option>North</option>
-                                <option>South</option>
-                                <option>East</option>
-                                <option>West</option>
-                            </select>
-                        </div>
-                        <div style="display:flex; gap:6px;">
-                            <label
-                                style="display:flex; align-items:center; gap:4px; font-family:'Share Tech Mono', monospace; font-size:12px; color:var(--text-bright); cursor:pointer;">
-                                <input type="checkbox" id="roi-enable-cb" checked>
-                                ENABLE
-                            </label>
-                            <button class="btn btn-red btn-sm" id="roi-clear-btn">CLEAR</button>
-                            <button class="btn btn-green btn-sm" id="roi-save-btn">SAVE ROI</button>
-                        </div>
-                    </div>
-
-                    <div class="roi-wrap">
-                        <img id="roi-img" src="" alt="Live Feed Preview">
-                        <canvas id="roi-canvas"></canvas>
-                        <div class="video-overlay">
-                            <div class="vid-badge" id="roi-status">READY</div>
-                        </div>
-                    </div>
-
-                    <div style="margin-top:10px; display:flex; justify-content:flex-end;">
-                        <button class="btn btn-green btn-sm" style="width:auto;" id="roi-save-set-btn">SAVE ENTIRE SET
-                            TO DB</button>
-                    </div>
-                </div>
-            </div>
-            <div class="fwin-resize"></div>
-        </div>
-
-        <!-- WINDOW: Traffic Lights -->
-        <div class="fwin" id="win-tl" style="width:360px; top:80px; left:480px; display:none;">
-            <div class="fwin-titlebar">
-                <span class="fwin-title">[ TRAFFIC LIGHTS / MAPPING ]</span>
-                <button class="fwin-btn pin-btn" title="Pin">P</button>
-                <button class="fwin-btn close-btn" title="Close">X</button>
-            </div>
-            <div class="fwin-body">
-                <div class="section-head">VISUAL STATE</div>
-                <div class="tl-visual">
-                    <div class="tl-unit" id="tl-vis-North">
-                        <div class="tl-lights">
-                            <div class="tl-light lit-red" id="tl-r-North"></div>
-                            <div class="tl-light" id="tl-y-North"></div>
-                            <div class="tl-light" id="tl-g-North"></div>
-                        </div>
-                        <span class="tl-name">NORTH</span>
-                        <span class="tl-id" id="tl-id-North">--</span>
-                    </div>
-                    <div class="tl-unit" id="tl-vis-South">
-                        <div class="tl-lights">
-                            <div class="tl-light lit-red" id="tl-r-South"></div>
-                            <div class="tl-light" id="tl-y-South"></div>
-                            <div class="tl-light" id="tl-g-South"></div>
-                        </div>
-                        <span class="tl-name">SOUTH</span>
-                        <span class="tl-id" id="tl-id-South">--</span>
-                    </div>
-                    <div class="tl-unit" id="tl-vis-East">
-                        <div class="tl-lights">
-                            <div class="tl-light lit-red" id="tl-r-East"></div>
-                            <div class="tl-light" id="tl-y-East"></div>
-                            <div class="tl-light" id="tl-g-East"></div>
-                        </div>
-                        <span class="tl-name">EAST</span>
-                        <span class="tl-id" id="tl-id-East">--</span>
-                    </div>
-                    <div class="tl-unit" id="tl-vis-West">
-                        <div class="tl-lights">
-                            <div class="tl-light lit-red" id="tl-r-West"></div>
-                            <div class="tl-light" id="tl-y-West"></div>
-                            <div class="tl-light" id="tl-g-West"></div>
-                        </div>
-                        <span class="tl-name">WEST</span>
-                        <span class="tl-id" id="tl-id-West">--</span>
-                    </div>
-                </div>
-                <div class="section-head">ACTOR ID MAPPING & TEST</div>
-                <div class="tl-mapping-list">
-                    <!-- North -->
-                    <div class="tl-map-row">
-                        <div style="flex:1;">
-                            <label class="form-label">NORTH ID</label>
-                            <input type="number" class="form-input" id="tl-north" placeholder="ID">
-                        </div>
-                        <div class="tl-test-btns">
-                            <button class="tbtn tbtn-r" onclick="testTL('North','red')">R</button>
-                            <button class="tbtn tbtn-y" onclick="testTL('North','yellow')">Y</button>
-                            <button class="tbtn tbtn-g" onclick="testTL('North','green')">G</button>
-                        </div>
-                    </div>
-                    <!-- South -->
-                    <div class="tl-map-row">
-                        <div style="flex:1;">
-                            <label class="form-label">SOUTH ID</label>
-                            <input type="number" class="form-input" id="tl-south" placeholder="ID">
-                        </div>
-                        <div class="tl-test-btns">
-                            <button class="tbtn tbtn-r" onclick="testTL('South','red')">R</button>
-                            <button class="tbtn tbtn-y" onclick="testTL('South','yellow')">Y</button>
-                            <button class="tbtn tbtn-g" onclick="testTL('South','green')">G</button>
-                        </div>
-                    </div>
-                    <!-- East -->
-                    <div class="tl-map-row">
-                        <div style="flex:1;">
-                            <label class="form-label">EAST ID</label>
-                            <input type="number" class="form-input" id="tl-east" placeholder="ID">
-                        </div>
-                        <div class="tl-test-btns">
-                            <button class="tbtn tbtn-r" onclick="testTL('East','red')">R</button>
-                            <button class="tbtn tbtn-y" onclick="testTL('East','yellow')">Y</button>
-                            <button class="tbtn tbtn-g" onclick="testTL('East','green')">G</button>
-                        </div>
-                    </div>
-                    <!-- West -->
-                    <div class="tl-map-row">
-                        <div style="flex:1;">
-                            <label class="form-label">WEST ID</label>
-                            <input type="number" class="form-input" id="tl-west" placeholder="ID">
-                        </div>
-                        <div class="tl-test-btns">
-                            <button class="tbtn tbtn-r" onclick="testTL('West','red')">R</button>
-                            <button class="tbtn tbtn-y" onclick="testTL('West','yellow')">Y</button>
-                            <button class="tbtn tbtn-g" onclick="testTL('West','green')">G</button>
-                        </div>
-                    </div>
-                </div>
-                <button class="btn btn-cyan btn-sm" id="btn-update-tl" style="margin-top:10px;">UPDATE BINDINGS</button>
-            </div>
-            <div class="fwin-resize"></div>
-        </div>
-
-        <!-- WINDOW: Live Feed -->
-        <div class="fwin" id="win-live" style="width:500px; top:200px; left:200px; display:none;">
-            <div class="fwin-titlebar">
-                <span class="fwin-title">[ LIVE FEED / CAMERA STREAM ]</span>
-                <button class="fwin-btn pin-btn" title="Pin">P</button>
-                <button class="fwin-btn close-btn" title="Close">X</button>
-            </div>
-            <div class="fwin-body" style="padding:0; overflow:hidden;">
-                <div class="video-wrap" style="margin:0; border:none;">
-                    <img id="live-img" src="/video_feed" alt="Live Feed"
-                        onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'640\' height=\'360\'%3E%3Crect width=\'100%25\' height=\'100%25\' fill=\'%23000\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' font-family=\'monospace\' font-size=\'14\' fill=\'%234a5570\' text-anchor=\'middle\' dy=\'0.3em\'%3ENO_SIGNAL%3C/text%3E%3C/svg%3E'">
-                    <div class="video-overlay">
-                        <span class="vid-badge live">LIVE</span>
-                        <span class="vid-badge" id="live-badge-fps">MJPEG</span>
-                    </div>
-                </div>
-            </div>
-            <div class="fwin-resize"></div>
-        </div>
-
-
-    </div>
-
-    <!-- ===== MODE 2 PANEL ===== -->
-    <div id="mode2-panel">
-        <!-- Inner tab bar -->
-        <div class="m2-tabs">
-            <div class="m2-tab active" id="m2-tab-config" onclick="switchM2Tab('config')">CONFIGURE INPUTS</div>
-            <div class="m2-tab" id="m2-tab-main" onclick="switchM2Tab('main')">MAIN VIEW</div>
-            <div class="m2-tab-sep"></div>
-            <button class="m2-save-btn" id="m2-save-all">APPLY &amp; SAVE ALL</button>
-        </div>
-
-        <div class="m2-content">
-            <!-- CONFIG SECTION: Single card full-screen with direction sub-tabs -->
-            <div class="m2-section active" id="m2-section-config">
-                <div class="m2-config-container">
-                    <!-- Direction Sub-Tabs -->
-                    <div class="m2-subtabs">
-                        <button class="m2-subtab active" id="m2-subtab-North"
-                            onclick="switchM2ConfigDir('North')">NORTH</button>
-                        <button class="m2-subtab" id="m2-subtab-West" onclick="switchM2ConfigDir('West')">WEST</button>
-                        <button class="m2-subtab" id="m2-subtab-South"
-                            onclick="switchM2ConfigDir('South')">SOUTH</button>
-                        <button class="m2-subtab" id="m2-subtab-East" onclick="switchM2ConfigDir('East')">EAST</button>
-                    </div>
-
-                    <div class="m2-config-viewport">
-                        <!-- NORTH -->
-                        <div class="m2-dir-card active" id="m2-card-North" data-dir="North">
-                            <div class="m2-card-head">
-                                <span class="m2-dir-badge">NORTH SOURCE</span>
-                                <div class="m2-card-src-row">
-                                    <input type="text" class="m2-src-input" id="m2-src-North"
-                                        placeholder="0  /  http://127.0.0.1:5000/video_feed?id=27  /  rtsp://...">
-                                    <button class="m2-apply-btn" onclick="applyM2Source('North')">APPLY</button>
-                                </div>
-                            </div>
-                            <div class="m2-src-hint">Webcam index · HTTP MJPEG URL · RTSP · Video file path</div>
-                            <div class="m2-card-preview">
-                                <img id="m2-prev-North" src="/video_feed/mode2/North" alt="North Preview">
-                                <canvas class="m2-roi-canvas" id="m2-roi-canvas-North" data-dir="North"></canvas>
-                                <div class="m2-prev-badge" id="m2-prev-badge-North">PREVIEW</div>
-                            </div>
-                            <div class="m2-roi-bar">
-                                <span class="m2-roi-label">ROI ZONE MANAGEMENT</span>
-                                <span class="m2-roi-status" id="m2-roi-status-North">NO ROI SET</span>
-                                <button class="m2-roi-btn" id="m2-roi-draw-North"
-                                    onclick="toggleM2ROIDraw('North')">DRAW
-                                    ROI</button>
-                                <button class="m2-roi-btn clr" onclick="clearM2ROI('North')">CLEAR</button>
-                                <button class="m2-roi-btn save" onclick="saveM2ROI('North')">SAVE ROI</button>
-                            </div>
-                        </div>
-
-                        <!-- WEST -->
-                        <div class="m2-dir-card" id="m2-card-West" data-dir="West">
-                            <div class="m2-card-head">
-                                <span class="m2-dir-badge">WEST SOURCE</span>
-                                <div class="m2-card-src-row">
-                                    <input type="text" class="m2-src-input" id="m2-src-West"
-                                        placeholder="0  /  http://127.0.0.1:5000/video_feed?id=27  /  rtsp://...">
-                                    <button class="m2-apply-btn" onclick="applyM2Source('West')">APPLY</button>
-                                </div>
-                            </div>
-                            <div class="m2-src-hint">Webcam index · HTTP MJPEG URL · RTSP · Video file path</div>
-                            <div class="m2-card-preview">
-                                <img id="m2-prev-West" src="/video_feed/mode2/West" alt="West Preview">
-                                <canvas class="m2-roi-canvas" id="m2-roi-canvas-West" data-dir="West"></canvas>
-                                <div class="m2-prev-badge" id="m2-prev-badge-West">PREVIEW</div>
-                            </div>
-                            <div class="m2-roi-bar">
-                                <span class="m2-roi-label">ROI ZONE MANAGEMENT</span>
-                                <span class="m2-roi-status" id="m2-roi-status-West">NO ROI SET</span>
-                                <button class="m2-roi-btn" id="m2-roi-draw-West" onclick="toggleM2ROIDraw('West')">DRAW
-                                    ROI</button>
-                                <button class="m2-roi-btn clr" onclick="clearM2ROI('West')">CLEAR</button>
-                                <button class="m2-roi-btn save" onclick="saveM2ROI('West')">SAVE ROI</button>
-                            </div>
-                        </div>
-
-                        <!-- SOUTH -->
-                        <div class="m2-dir-card" id="m2-card-South" data-dir="South">
-                            <div class="m2-card-head">
-                                <span class="m2-dir-badge">SOUTH SOURCE</span>
-                                <div class="m2-card-src-row">
-                                    <input type="text" class="m2-src-input" id="m2-src-South"
-                                        placeholder="0  /  http://127.0.0.1:5000/video_feed?id=27  /  rtsp://...">
-                                    <button class="m2-apply-btn" onclick="applyM2Source('South')">APPLY</button>
-                                </div>
-                            </div>
-                            <div class="m2-src-hint">Webcam index · HTTP MJPEG URL · RTSP · Video file path</div>
-                            <div class="m2-card-preview">
-                                <img id="m2-prev-South" src="/video_feed/mode2/South" alt="South Preview">
-                                <canvas class="m2-roi-canvas" id="m2-roi-canvas-South" data-dir="South"></canvas>
-                                <div class="m2-prev-badge" id="m2-prev-badge-South">PREVIEW</div>
-                            </div>
-                            <div class="m2-roi-bar">
-                                <span class="m2-roi-label">ROI ZONE MANAGEMENT</span>
-                                <span class="m2-roi-status" id="m2-roi-status-South">NO ROI SET</span>
-                                <button class="m2-roi-btn" id="m2-roi-draw-South"
-                                    onclick="toggleM2ROIDraw('South')">DRAW
-                                    ROI</button>
-                                <button class="m2-roi-btn clr" onclick="clearM2ROI('South')">CLEAR</button>
-                                <button class="m2-roi-btn save" onclick="saveM2ROI('South')">SAVE ROI</button>
-                            </div>
-                        </div>
-
-                        <!-- EAST -->
-                        <div class="m2-dir-card" id="m2-card-East" data-dir="East">
-                            <div class="m2-card-head">
-                                <span class="m2-dir-badge">EAST SOURCE</span>
-                                <div class="m2-card-src-row">
-                                    <input type="text" class="m2-src-input" id="m2-src-East"
-                                        placeholder="0  /  http://127.0.0.1:5000/video_feed?id=27  /  rtsp://...">
-                                    <button class="m2-apply-btn" onclick="applyM2Source('East')">APPLY</button>
-                                </div>
-                            </div>
-                            <div class="m2-src-hint">Webcam index · HTTP MJPEG URL · RTSP · Video file path</div>
-                            <div class="m2-card-preview">
-                                <img id="m2-prev-East" src="/video_feed/mode2/East" alt="East Preview">
-                                <canvas class="m2-roi-canvas" id="m2-roi-canvas-East" data-dir="East"></canvas>
-                                <div class="m2-prev-badge" id="m2-prev-badge-East">PREVIEW</div>
-                            </div>
-                            <div class="m2-roi-bar">
-                                <span class="m2-roi-label">ROI ZONE MANAGEMENT</span>
-                                <span class="m2-roi-status" id="m2-roi-status-East">NO ROI SET</span>
-                                <button class="m2-roi-btn" id="m2-roi-draw-East" onclick="toggleM2ROIDraw('East')">DRAW
-                                    ROI</button>
-                                <button class="m2-roi-btn clr" onclick="clearM2ROI('East')">CLEAR</button>
-                                <button class="m2-roi-btn save" onclick="saveM2ROI('East')">SAVE ROI</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-
-            <!-- MAIN VIEW SECTION: 4 feed tiles with TL signal next to each -->
-            <div class="m2-section" id="m2-section-main">
-                <div class="m2-main-grid">
-                    <!-- NORTH tile -->
-                    <div class="m2-feed-tile" id="m2-tile-North">
-                        <div class="m2-feed-video">
-                            <img id="m2-main-North" src="/video_feed/mode2/North" alt="North Feed">
-                            <div class="m2-feed-overlay">
-                                <span class="vid-badge live">LIVE</span>
-                                <span class="vid-badge" style="border-color:var(--cyan);color:var(--cyan);">NORTH</span>
-                            </div>
-                            <div class="m2-priority-badge" id="m2-pri-North"></div>
-                        </div>
-                        <div class="m2-tl-panel">
-                            <span class="m2-tl-dir">N</span>
-                            <div class="m2-tl-pole"></div>
-                            <div class="m2-tl-body">
-                                <div class="m2-tl-visor"></div>
-                                <div class="m2-tl-bulb-wrap">
-                                    <div class="m2-tl-bulb lit-red" id="m2-tl-r-North"></div>
-                                    <div class="m2-tl-bulb" id="m2-tl-y-North"></div>
-                                    <div class="m2-tl-bulb" id="m2-tl-g-North"></div>
-                                </div>
-                            </div>
-                            <div class="m2-tl-countdown-wrap"><div class="m2-tl-countdown-bar" id="m2-cd-North"></div></div>
-                            <div class="m2-tl-stats">
-                                <span class="m2-count-lbl" id="m2-cnt-North">0</span>
-                                <span class="m2-count-sub">VEH</span>
-                            </div>
-                            <div class="m2-tl-load-wrap"><div class="m2-tl-load-bar" id="m2-load-North"></div></div>
-                        </div>
-                    </div>
-                    <!-- WEST tile -->
-                    <div class="m2-feed-tile" id="m2-tile-West">
-                        <div class="m2-feed-video">
-                            <img id="m2-main-West" src="/video_feed/mode2/West" alt="West Feed">
-                            <div class="m2-feed-overlay">
-                                <span class="vid-badge live">LIVE</span>
-                                <span class="vid-badge" style="border-color:var(--cyan);color:var(--cyan);">WEST</span>
-                            </div>
-                            <div class="m2-priority-badge" id="m2-pri-West"></div>
-                        </div>
-                        <div class="m2-tl-panel">
-                            <span class="m2-tl-dir">W</span>
-                            <div class="m2-tl-pole"></div>
-                            <div class="m2-tl-body">
-                                <div class="m2-tl-visor"></div>
-                                <div class="m2-tl-bulb-wrap">
-                                    <div class="m2-tl-bulb lit-red" id="m2-tl-r-West"></div>
-                                    <div class="m2-tl-bulb" id="m2-tl-y-West"></div>
-                                    <div class="m2-tl-bulb" id="m2-tl-g-West"></div>
-                                </div>
-                            </div>
-                            <div class="m2-tl-countdown-wrap"><div class="m2-tl-countdown-bar" id="m2-cd-West"></div></div>
-                            <div class="m2-tl-stats">
-                                <span class="m2-count-lbl" id="m2-cnt-West">0</span>
-                                <span class="m2-count-sub">VEH</span>
-                            </div>
-                            <div class="m2-tl-load-wrap"><div class="m2-tl-load-bar" id="m2-load-West"></div></div>
-                        </div>
-                    </div>
-                    <!-- SOUTH tile -->
-                    <div class="m2-feed-tile" id="m2-tile-South">
-                        <div class="m2-feed-video">
-                            <img id="m2-main-South" src="/video_feed/mode2/South" alt="South Feed">
-                            <div class="m2-feed-overlay">
-                                <span class="vid-badge live">LIVE</span>
-                                <span class="vid-badge" style="border-color:var(--cyan);color:var(--cyan);">SOUTH</span>
-                            </div>
-                            <div class="m2-priority-badge" id="m2-pri-South"></div>
-                        </div>
-                        <div class="m2-tl-panel">
-                            <span class="m2-tl-dir">S</span>
-                            <div class="m2-tl-pole"></div>
-                            <div class="m2-tl-body">
-                                <div class="m2-tl-visor"></div>
-                                <div class="m2-tl-bulb-wrap">
-                                    <div class="m2-tl-bulb lit-red" id="m2-tl-r-South"></div>
-                                    <div class="m2-tl-bulb" id="m2-tl-y-South"></div>
-                                    <div class="m2-tl-bulb" id="m2-tl-g-South"></div>
-                                </div>
-                            </div>
-                            <div class="m2-tl-countdown-wrap"><div class="m2-tl-countdown-bar" id="m2-cd-South"></div></div>
-                            <div class="m2-tl-stats">
-                                <span class="m2-count-lbl" id="m2-cnt-South">0</span>
-                                <span class="m2-count-sub">VEH</span>
-                            </div>
-                            <div class="m2-tl-load-wrap"><div class="m2-tl-load-bar" id="m2-load-South"></div></div>
-                        </div>
-                    </div>
-                    <!-- EAST tile -->
-                    <div class="m2-feed-tile" id="m2-tile-East">
-                        <div class="m2-feed-video">
-                            <img id="m2-main-East" src="/video_feed/mode2/East" alt="East Feed">
-                            <div class="m2-feed-overlay">
-                                <span class="vid-badge live">LIVE</span>
-                                <span class="vid-badge" style="border-color:var(--cyan);color:var(--cyan);">EAST</span>
-                            </div>
-                            <div class="m2-priority-badge" id="m2-pri-East"></div>
-                        </div>
-                        <div class="m2-tl-panel">
-                            <span class="m2-tl-dir">E</span>
-                            <div class="m2-tl-pole"></div>
-                            <div class="m2-tl-body">
-                                <div class="m2-tl-visor"></div>
-                                <div class="m2-tl-bulb-wrap">
-                                    <div class="m2-tl-bulb lit-red" id="m2-tl-r-East"></div>
-                                    <div class="m2-tl-bulb" id="m2-tl-y-East"></div>
-                                    <div class="m2-tl-bulb" id="m2-tl-g-East"></div>
-                                </div>
-                            </div>
-                            <div class="m2-tl-countdown-wrap"><div class="m2-tl-countdown-bar" id="m2-cd-East"></div></div>
-                            <div class="m2-tl-stats">
-                                <span class="m2-count-lbl" id="m2-cnt-East">0</span>
-                                <span class="m2-count-sub">VEH</span>
-                            </div>
-                            <div class="m2-tl-load-wrap"><div class="m2-tl-load-bar" id="m2-load-East"></div></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- TOAST CONTAINER -->
-    <div id="toast-container"></div>
-
-    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
-</body>
-
-</html>

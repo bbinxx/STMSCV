@@ -1,0 +1,293 @@
+<!-- ===== MODE 2 PANEL ===== -->
+    <div id="mode2-panel">
+        <!-- Inner tab bar -->
+        <div class="m2-tabs">
+            <div class="m2-tab active" id="m2-tab-config" onclick="switchM2Tab('config')">CONFIGURE INPUTS</div>
+            <div class="m2-tab" id="m2-tab-main" onclick="switchM2Tab('main')">MAIN VIEW</div>
+            <div class="m2-tab-sep"></div>
+            <div class="m2-toggle-wrap">
+                <span class="m2-toggle-label">MODE:</span>
+                <button class="m2-mode-btn" id="m2-mode-toggle" onclick="toggleControlMode()" style="min-width:auto; padding:4px 12px;">FIXED CYCLE</button>
+            </div>
+            <div class="m2-tab-sep" style="flex:0; width:1px; background:var(--border); height:24px; margin:0 8px;"></div>
+            <div class="m2-toggle-wrap">
+                <span class="m2-toggle-label">SYSTEM:</span>
+                <button class="m2-mode-btn m2-start-btn" id="m2-btn-start" onclick="m2SystemStart()" style="border-color:var(--green); color:var(--green); min-width:auto; padding:4px 16px;">▶ START</button>
+                <button class="m2-mode-btn" id="m2-btn-stop" onclick="m2SystemStop()" style="border-color:var(--red); color:var(--red); margin-left:6px; min-width:auto; padding:4px 16px;">■ STOP</button>
+            </div>
+            <div class="m2-tab-sep" style="flex:0; width:1px; background:var(--border); height:24px; margin:0 8px;"></div>
+            <button class="m2-save-btn" id="m2-save-all">APPLY &amp; SAVE ALL</button>
+        </div>
+
+        <div class="m2-content">
+            <!-- CONFIG SECTION: Single card full-screen with direction sub-tabs -->
+            <div class="m2-section active" id="m2-section-config">
+                <div class="m2-config-container">
+                    <!-- Direction Sub-Tabs -->
+                    <div class="m2-subtabs">
+                        <button class="m2-subtab active" id="m2-subtab-North"
+                            onclick="switchM2ConfigDir('North')">NORTH</button>
+                        <button class="m2-subtab" id="m2-subtab-West" onclick="switchM2ConfigDir('West')">WEST</button>
+                        <button class="m2-subtab" id="m2-subtab-South"
+                            onclick="switchM2ConfigDir('South')">SOUTH</button>
+                        <button class="m2-subtab" id="m2-subtab-East" onclick="switchM2ConfigDir('East')">EAST</button>
+                    </div>
+
+                    <div class="m2-config-viewport">
+                        <!-- NORTH -->
+                        <div class="m2-dir-card active" id="m2-card-North" data-dir="North">
+                            <div class="m2-card-head">
+                                <span class="m2-dir-badge">NORTH SOURCE</span>
+                                <div class="m2-card-src-row">
+                                    <input type="text" class="m2-src-input" id="m2-src-North"
+                                        placeholder="0  /  http://127.0.0.1:5000/video_feed?id=27  /  rtsp://...">
+                                    <button class="m2-apply-btn" onclick="applyM2Source('North')">APPLY</button>
+                                </div>
+                            </div>
+                            <div class="m2-src-hint">Webcam index · HTTP MJPEG URL · RTSP · Video file path</div>
+                            <div class="m2-card-preview">
+                                <img id="m2-prev-North" src="/video_feed/mode2/North" alt="North Preview">
+                                <canvas class="m2-roi-canvas" id="m2-roi-canvas-North" data-dir="North"></canvas>
+                                <div class="m2-prev-badge" id="m2-prev-badge-North">PREVIEW</div>
+                            </div>
+                            <div class="m2-roi-bar">
+                                <span class="m2-roi-label">ROI ZONE MANAGEMENT</span>
+                                <span class="m2-roi-status" id="m2-roi-status-North">NO ROI SET</span>
+                                <button class="m2-roi-btn" id="m2-roi-draw-North"
+                                    onclick="toggleM2ROIDraw('North')">DRAW
+                                    ROI</button>
+                                <button class="m2-roi-btn clr" onclick="clearM2ROI('North')">CLEAR</button>
+                                <button class="m2-roi-btn save" onclick="saveM2ROI('North')">SAVE ROI</button>
+                            </div>
+                        </div>
+
+                        <!-- WEST -->
+                        <div class="m2-dir-card" id="m2-card-West" data-dir="West">
+                            <div class="m2-card-head">
+                                <span class="m2-dir-badge">WEST SOURCE</span>
+                                <div class="m2-card-src-row">
+                                    <input type="text" class="m2-src-input" id="m2-src-West"
+                                        placeholder="0  /  http://127.0.0.1:5000/video_feed?id=27  /  rtsp://...">
+                                    <button class="m2-apply-btn" onclick="applyM2Source('West')">APPLY</button>
+                                </div>
+                            </div>
+                            <div class="m2-src-hint">Webcam index · HTTP MJPEG URL · RTSP · Video file path</div>
+                            <div class="m2-card-preview">
+                                <img id="m2-prev-West" src="/video_feed/mode2/West" alt="West Preview">
+                                <canvas class="m2-roi-canvas" id="m2-roi-canvas-West" data-dir="West"></canvas>
+                                <div class="m2-prev-badge" id="m2-prev-badge-West">PREVIEW</div>
+                            </div>
+                            <div class="m2-roi-bar">
+                                <span class="m2-roi-label">ROI ZONE MANAGEMENT</span>
+                                <span class="m2-roi-status" id="m2-roi-status-West">NO ROI SET</span>
+                                <button class="m2-roi-btn" id="m2-roi-draw-West" onclick="toggleM2ROIDraw('West')">DRAW
+                                    ROI</button>
+                                <button class="m2-roi-btn clr" onclick="clearM2ROI('West')">CLEAR</button>
+                                <button class="m2-roi-btn save" onclick="saveM2ROI('West')">SAVE ROI</button>
+                            </div>
+                        </div>
+
+                        <!-- SOUTH -->
+                        <div class="m2-dir-card" id="m2-card-South" data-dir="South">
+                            <div class="m2-card-head">
+                                <span class="m2-dir-badge">SOUTH SOURCE</span>
+                                <div class="m2-card-src-row">
+                                    <input type="text" class="m2-src-input" id="m2-src-South"
+                                        placeholder="0  /  http://127.0.0.1:5000/video_feed?id=27  /  rtsp://...">
+                                    <button class="m2-apply-btn" onclick="applyM2Source('South')">APPLY</button>
+                                </div>
+                            </div>
+                            <div class="m2-src-hint">Webcam index · HTTP MJPEG URL · RTSP · Video file path</div>
+                            <div class="m2-card-preview">
+                                <img id="m2-prev-South" src="/video_feed/mode2/South" alt="South Preview">
+                                <canvas class="m2-roi-canvas" id="m2-roi-canvas-South" data-dir="South"></canvas>
+                                <div class="m2-prev-badge" id="m2-prev-badge-South">PREVIEW</div>
+                            </div>
+                            <div class="m2-roi-bar">
+                                <span class="m2-roi-label">ROI ZONE MANAGEMENT</span>
+                                <span class="m2-roi-status" id="m2-roi-status-South">NO ROI SET</span>
+                                <button class="m2-roi-btn" id="m2-roi-draw-South"
+                                    onclick="toggleM2ROIDraw('South')">DRAW
+                                    ROI</button>
+                                <button class="m2-roi-btn clr" onclick="clearM2ROI('South')">CLEAR</button>
+                                <button class="m2-roi-btn save" onclick="saveM2ROI('South')">SAVE ROI</button>
+                            </div>
+                        </div>
+
+                        <!-- EAST -->
+                        <div class="m2-dir-card" id="m2-card-East" data-dir="East">
+                            <div class="m2-card-head">
+                                <span class="m2-dir-badge">EAST SOURCE</span>
+                                <div class="m2-card-src-row">
+                                    <input type="text" class="m2-src-input" id="m2-src-East"
+                                        placeholder="0  /  http://127.0.0.1:5000/video_feed?id=27  /  rtsp://...">
+                                    <button class="m2-apply-btn" onclick="applyM2Source('East')">APPLY</button>
+                                </div>
+                            </div>
+                            <div class="m2-src-hint">Webcam index · HTTP MJPEG URL · RTSP · Video file path</div>
+                            <div class="m2-card-preview">
+                                <img id="m2-prev-East" src="/video_feed/mode2/East" alt="East Preview">
+                                <canvas class="m2-roi-canvas" id="m2-roi-canvas-East" data-dir="East"></canvas>
+                                <div class="m2-prev-badge" id="m2-prev-badge-East">PREVIEW</div>
+                            </div>
+                            <div class="m2-roi-bar">
+                                <span class="m2-roi-label">ROI ZONE MANAGEMENT</span>
+                                <span class="m2-roi-status" id="m2-roi-status-East">NO ROI SET</span>
+                                <button class="m2-roi-btn" id="m2-roi-draw-East" onclick="toggleM2ROIDraw('East')">DRAW
+                                    ROI</button>
+                                <button class="m2-roi-btn clr" onclick="clearM2ROI('East')">CLEAR</button>
+                                <button class="m2-roi-btn save" onclick="saveM2ROI('East')">SAVE ROI</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+
+            <!-- MAIN VIEW SECTION: 4 feed tiles with TL signal next to each -->
+            <div class="m2-section" id="m2-section-main">
+                <div class="m2-main-grid">
+                    <!-- NORTH tile -->
+                    <div class="m2-feed-tile" id="m2-tile-North">
+                        <div class="m2-feed-video">
+                            <img id="m2-main-North" src="/video_feed/mode2/North" alt="North Feed">
+                            <div class="m2-feed-overlay">
+                                <span class="vid-badge live">LIVE</span>
+                                <span class="vid-badge" style="border-color:var(--cyan);color:var(--cyan);">NORTH</span>
+                            </div>
+                            <div class="m2-priority-badge" id="m2-pri-North"></div>
+                        </div>
+                        <div class="m2-tl-panel">
+                            <span class="m2-tl-dir">N</span>
+                            <div class="m2-tl-pole"></div>
+                            <div class="m2-tl-body">
+                                <div class="m2-tl-visor"></div>
+                                <div class="m2-tl-bulb-wrap">
+                                    <div class="m2-tl-bulb" id="m2-tl-r-North" data-color="red"></div>
+                                    <div class="m2-tl-bulb" id="m2-tl-y-North" data-color="yellow"></div>
+                                    <div class="m2-tl-bulb" id="m2-tl-g-North" data-color="green"></div>
+                                </div>
+                            </div>
+                            <div class="m2-tl-countdown-wrap">
+                                <div class="m2-tl-countdown-bar" id="m2-cd-North"></div>
+                            </div>
+                            <div class="m2-tl-stats">
+                                <span class="m2-count-lbl" id="m2-cnt-North">0</span>
+                                <span class="m2-count-sub">VEH</span>
+                                <span style="font-family:'Share Tech Mono',monospace;font-size:9px;margin-top:3px;" id="m2-intensity-North"></span>
+                                <span style="font-family:'Share Tech Mono',monospace;font-size:9px;" id="m2-wait-North"></span>
+                            </div>
+                            <div class="m2-tl-load-wrap">
+                                <div class="m2-tl-load-bar" id="m2-load-North"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- WEST tile -->
+                    <div class="m2-feed-tile" id="m2-tile-West">
+                        <div class="m2-feed-video">
+                            <img id="m2-main-West" src="/video_feed/mode2/West" alt="West Feed">
+                            <div class="m2-feed-overlay">
+                                <span class="vid-badge live">LIVE</span>
+                                <span class="vid-badge" style="border-color:var(--cyan);color:var(--cyan);">WEST</span>
+                            </div>
+                            <div class="m2-priority-badge" id="m2-pri-West"></div>
+                        </div>
+                        <div class="m2-tl-panel">
+                            <span class="m2-tl-dir">W</span>
+                            <div class="m2-tl-pole"></div>
+                            <div class="m2-tl-body">
+                                <div class="m2-tl-visor"></div>
+                                <div class="m2-tl-bulb-wrap">
+                                    <div class="m2-tl-bulb" id="m2-tl-r-West" data-color="red"></div>
+                                    <div class="m2-tl-bulb" id="m2-tl-y-West" data-color="yellow"></div>
+                                    <div class="m2-tl-bulb" id="m2-tl-g-West" data-color="green"></div>
+                                </div>
+                            </div>
+                            <div class="m2-tl-countdown-wrap">
+                                <div class="m2-tl-countdown-bar" id="m2-cd-West"></div>
+                            </div>
+                            <div class="m2-tl-stats">
+                                <span class="m2-count-lbl" id="m2-cnt-West">0</span>
+                                <span class="m2-count-sub">VEH</span>
+                                <span style="font-family:'Share Tech Mono',monospace;font-size:9px;margin-top:3px;" id="m2-intensity-West"></span>
+                                <span style="font-family:'Share Tech Mono',monospace;font-size:9px;" id="m2-wait-West"></span>
+                            </div>
+                            <div class="m2-tl-load-wrap">
+                                <div class="m2-tl-load-bar" id="m2-load-West"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- SOUTH tile -->
+                    <div class="m2-feed-tile" id="m2-tile-South">
+                        <div class="m2-feed-video">
+                            <img id="m2-main-South" src="/video_feed/mode2/South" alt="South Feed">
+                            <div class="m2-feed-overlay">
+                                <span class="vid-badge live">LIVE</span>
+                                <span class="vid-badge" style="border-color:var(--cyan);color:var(--cyan);">SOUTH</span>
+                            </div>
+                            <div class="m2-priority-badge" id="m2-pri-South"></div>
+                        </div>
+                        <div class="m2-tl-panel">
+                            <span class="m2-tl-dir">S</span>
+                            <div class="m2-tl-pole"></div>
+                            <div class="m2-tl-body">
+                                <div class="m2-tl-visor"></div>
+                                <div class="m2-tl-bulb-wrap">
+                                    <div class="m2-tl-bulb" id="m2-tl-r-South" data-color="red"></div>
+                                    <div class="m2-tl-bulb" id="m2-tl-y-South" data-color="yellow"></div>
+                                    <div class="m2-tl-bulb" id="m2-tl-g-South" data-color="green"></div>
+                                </div>
+                            </div>
+                            <div class="m2-tl-countdown-wrap">
+                                <div class="m2-tl-countdown-bar" id="m2-cd-South"></div>
+                            </div>
+                            <div class="m2-tl-stats">
+                                <span class="m2-count-lbl" id="m2-cnt-South">0</span>
+                                <span class="m2-count-sub">VEH</span>
+                                <span style="font-family:'Share Tech Mono',monospace;font-size:9px;margin-top:3px;" id="m2-intensity-South"></span>
+                                <span style="font-family:'Share Tech Mono',monospace;font-size:9px;" id="m2-wait-South"></span>
+                            </div>
+                            <div class="m2-tl-load-wrap">
+                                <div class="m2-tl-load-bar" id="m2-load-South"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- EAST tile -->
+                    <div class="m2-feed-tile" id="m2-tile-East">
+                        <div class="m2-feed-video">
+                            <img id="m2-main-East" src="/video_feed/mode2/East" alt="East Feed">
+                            <div class="m2-feed-overlay">
+                                <span class="vid-badge live">LIVE</span>
+                                <span class="vid-badge" style="border-color:var(--cyan);color:var(--cyan);">EAST</span>
+                            </div>
+                            <div class="m2-priority-badge" id="m2-pri-East"></div>
+                        </div>
+                        <div class="m2-tl-panel">
+                            <span class="m2-tl-dir">E</span>
+                            <div class="m2-tl-pole"></div>
+                            <div class="m2-tl-body">
+                                <div class="m2-tl-visor"></div>
+                                <div class="m2-tl-bulb-wrap">
+                                    <div class="m2-tl-bulb" id="m2-tl-r-East" data-color="red"></div>
+                                    <div class="m2-tl-bulb" id="m2-tl-y-East" data-color="yellow"></div>
+                                    <div class="m2-tl-bulb" id="m2-tl-g-East" data-color="green"></div>
+                                </div>
+                            </div>
+                            <div class="m2-tl-countdown-wrap">
+                                <div class="m2-tl-countdown-bar" id="m2-cd-East"></div>
+                            </div>
+                            <div class="m2-tl-stats">
+                                <span class="m2-count-lbl" id="m2-cnt-East">0</span>
+                                <span class="m2-count-sub">VEH</span>
+                                <span style="font-family:'Share Tech Mono',monospace;font-size:9px;margin-top:3px;" id="m2-intensity-East"></span>
+                                <span style="font-family:'Share Tech Mono',monospace;font-size:9px;" id="m2-wait-East"></span>
+                            </div>
+                            <div class="m2-tl-load-wrap">
+                                <div class="m2-tl-load-bar" id="m2-load-East"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>

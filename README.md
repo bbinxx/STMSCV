@@ -19,10 +19,10 @@ A professional, high-performance Traffic Management HMI that uses Computer Visio
 - **Live Dashboard**: Real-time vehicle counts, signal states, and countdown timers.
 - **External Live Feed**: Optionally point the main stream at any HTTP/RTSP/MJPEG/source URL or camera device; the app will ingest it, run detection, and expose it via the `/video_feed` and `/api/live_feed` endpoints.
 - **Multi-Camera (Mode 2)**: Support for 4 simultaneous video sources (Webcams, RTSP, Video Files, or MJPEG URLs).
-- **CARLA Integration**: Direct connection to the CARLA Simulator to sync virtual traffic lights and camera views.
+- **Controller API Integration**: Control traffic lights through generic REST API endpoints (no CARLA Python dependency required).
 
 ### 4. Configuration & API
-- **Dynamic Port Control**: Fully configurable Flask and CARLA connection settings.
+- **Dynamic Port Control**: Fully configurable Flask and Thorulf API connection settings.
 - **JSON API**: Built-in endpoints for external data consumption.
 
 ---
@@ -41,7 +41,7 @@ A professional, high-performance Traffic Management HMI that uses Computer Visio
 ### 1. Installation
 Install the required dependencies using `pip` or your preferred package manager:
 ```bash
-pip install flask opencv-python ultralytics numpy carla
+pip install flask opencv-python ultralytics numpy
 ```
 
 ### 2. Running the Application
@@ -51,8 +51,28 @@ python app.py
 ```
 By default, the HMI will be accessible at: `http://localhost:5050`
 
-### 3. CARLA Simulator Connection (Optional)
-Ensure CARLA is running, then use the **Control Panel** in the HMI to input your CARLA Host and Port to sync the virtual environment.
+### 3. Controller API Connection (Required)
+Ensure your controller API server is running and that live feed is active. Use the **Control Panel** in the HMI to input the Controller Host and Port, live feed source, and run the feed test before connecting.
+
+### 🔌 External API (Headless Control)
+Control the simulation through REST endpoints without CARLA Python in your app.
+
+1. Fetch all traffic lights from the configured controller:
+```bash
+curl http://localhost:5050/api/traffic_lights/all
+```
+2. Set multiple lights to one state via the app proxy:
+```bash
+curl -X POST http://localhost:5050/api/traffic_light/set_multiple \
+  -H "Content-Type: application/json" \
+  -d '{"ids": [105,106], "state": "Green", "freeze": true}'
+```
+3. Individual updates in one call through app proxy:
+```bash
+curl -X POST http://localhost:5050/api/traffic_light/set_multiple \
+  -H "Content-Type: application/json" \
+  -d '{"updates": [{"id":105,"state":"Red","freeze":true}, {"id":106,"state":"Green","freeze":false}]}'
+```
 
 ---
 
@@ -62,3 +82,50 @@ Ensure CARLA is running, then use the **Control Panel** in the HMI to input your
 - `static/`: Frontend assets (Styles, Scripts).
 - `templates/`: HMI Dashboard UI.
 - `traffic_data.db`: Persistent storage for ROIs and settings.
+
+## 🧭 HMI Panel Workflow
+### 1) Dashboard Panel (Main)
+- Shows controller status, detection/live feed health, lane counts, current phase.
+- Use this first to verify system status and that feed and controller are ready before automation.
+
+### 2) Connection Panel
+- Configure:
+  - Flask host/port (app server)
+  - Controller API host/port/timeout
+  - Live feed source URL/device
+  - YOLO model path
+  - Cycle timer
+- Use **TEST LIVE FEED** and **TEST CONTROLLER API** to validate before connecting.
+- Press **SAVE CONFIG** to persist settings.
+- Press **CONNECT** to establish controller API and enable automation (requires live feed ready).
+
+### 3) ROI Panel
+- Draw per-lane ROI boxes on live feed preview.
+- Save each ROI and save ROI sets for quick reloading.
+- Used by the detection pipeline to count vehicles per lane.
+
+### 4) Traffic Light Panel
+- Map lane names to controller TL ids.
+- Test each mapped traffic light with red/yellow/green buttons for validation.
+- This mapping is required for automated control to drive actual signal IDs.
+
+### 5) Live Feed Panel
+- Displays MJPEG video output from the active live feed source.
+- Use if you need to verify the processed stream visually.
+
+### 6) Multi-cam Mode (optional)
+- For multi-camera mode (Mode 2), configure per-direction sources, ROI, and use advanced source control.
+- Mode 2 is optional and can be toggled from the top nav.
+
+### Control Enforcement Rule
+- The system now only applies traffic control when:
+  1. Controller API is connected
+  2. Live feed is confirmed healthy
+- If live feed fails, controller status will show `Requires LIVE FEED` and control actions are blocked.
+
+### API Quick Checks
+- `GET /api/camera/status` to verify feed status
+- `GET /api/controller/status` to verify controller connectivity
+- `GET /api/lane_counts` to validate detection outputs
+
+This workflow ensures safe sequencing: configure → test feed → test API → connect → run automation.
