@@ -1186,7 +1186,7 @@ window.toggleM2ROIDraw = function(dir) {
         document.getElementById('m2-roi-canvas-' + dir).classList.add('drawing');
         document.getElementById('m2-card-' + dir).classList.add('drawing-mode');
         if (!m2ROIPoints[dir]) m2ROIPoints[dir] = [];
-        drawM2ROIScene(dir);
+        setTimeout(() => drawM2ROIScene(dir), 50);
     }
 };
 
@@ -1375,7 +1375,7 @@ loadExternalTLs();
             width: 100%;
             height: 100%;
             display: block;
-            object-fit: cover;
+            object-fit: contain;
             background: #000;
         }
     `;
