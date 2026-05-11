@@ -2,49 +2,20 @@ import cv2
 import numpy as np
 
 # --- detection constants (to avoid re-allocating each frame) ---
-# `ALL_VEHICLE_CLASSES` can be either a list of COCO class indices to restrict
-# detection, or ``None`` to let the model return all classes and then filter by
-# name.  Setting to ``None`` is the easiest way to ensure *every* vehicle type
-# is seen in the ROI, which is what users asked for in the dashboard.
-#
-# To view the mapping from index to name, run:
-#   >>> from ultralytics import YOLO
-#   >>> print(YOLO('yolov8s.pt').names)
-#
-# Examples of vehicle indices: bicycle=1, car=2, motorcycle=3, bus=5, train=6,
-# truck=7, boat=8.  But there are also names such as "ambulance" and "taxi"
-# which are useful to include in some scenarios.
 ALL_VEHICLE_CLASSES = None  # None => include every class reported by the model
 
-# if you do specify indices, you can still supply weights here; if ALL_VEHICLE_CLASSES
-# is None then CLASS_WEIGHT is used only for those classes present in the results
 CLASS_WEIGHT = {1: 1, 2: 2, 3: 1, 5: 3, 6: 3, 7: 3, 8: 2}  # heavier vehicles raise the score more
 
-# Keywords used when ALL_VEHICLE_CLASSES is None to recognise the object as a
-# vehicle.  Searching by substring makes it robust to names like 'ambulance'.
 VEHICLE_KEYWORDS = ['bicycle', 'car', 'motorcycle', 'bus', 'train', 'truck', 'boat', 'van', 'taxi', 'ambulance']
 
-# target inference size (must be <= 1280 for YOLOv8 by default)
-# lower values speed up detection at the cost of accuracy; user can tweak as needed
-DETECTION_IMG_SIZE = 640  # reduce default for faster real‑time performance
+DETECTION_IMG_SIZE = 416  # reduce for faster real‑time performance
 
-# lock name added to model when first used
 _YOLO_LOCK_ATTR = '_yolo_lock'
 
 
 def process_frame(frame, model, rois, conf_thres=0.20, iou_thres=0.45, img_size=640):
     """
     Detect vehicles only inside each ROI region.
-
-    For each ROI:
-      1. Crop the frame to the polygon's axis-aligned bounding box.
-      2. Run YOLO only on that crop (fast — small image).
-      3. Map detection coordinates back to the full frame.
-      4. Apply a point-in-polygon test against the exact ROI polygon.
-      5. Draw boxes and count only true positives inside the polygon.
-
-    Vehicles outside all ROIs are never processed, eliminating wasted
-    inference compute and spurious counts.
     """
     import threading
 
@@ -161,14 +132,16 @@ automation_state = {
     "yellow_trigger_lane": None,
     "control_mode": 1, # 1: Fixed Cycle, 2: Intensity Based
     "wait_times": {"North": 0.0, "South": 0.0, "East": 0.0, "West": 0.0},
-    "last_tick_time": 0.0
+    "last_tick_time": 0.0,
+    "latest_scores": {"North": 0.0, "South": 0.0, "East": 0.0, "West": 0.0},
+    "latest_green_timers": {"North": 30.0, "South": 30.0, "East": 30.0, "West": 30.0},
+    "latest_densities": {"North": 0.0, "South": 0.0, "East": 0.0, "West": 0.0},
+    "current_max_green": 30.0
 }
 
 def control_traffic_lights_logic(control_url, counts, tl_ids, cycle_timer=30.0, lane_scores=None, lane_heavies=None):
     """
     Advanced Adaptive AI Traffic Control Algorithm
-    Dynamically decides the green lane based on Score:
-    Score = (2*V) + (4*H) + (0.7*W) + (5*D) + (2*Q) + (1*F) - C
     """
     global automation_state
     
@@ -231,92 +204,103 @@ def control_traffic_lights_logic(control_url, counts, tl_ids, cycle_timer=30.0, 
         W = automation_state["wait_times"].get(lane, 0.0)
         E = lane_scores.get(lane, 0)  # Emergency vehicles
         
-        # Approximations for advanced metrics:
-        D = min(1.0, (V + H * 2.0) / 10.0)  # Density (0 to 1 scale, max 10 equivalent cars)
+        D = min(1.0, (V + H * 2.0) / 10.0)  # Density
         Q = V  # Queue length
         F = V / 10.0  # Flow rate proxy
         C = 10 if (lane == current_lane and time_since_last < 5.0) else 0 # Cooldown
         
-        # Score = (2 * V) + (4 * H) + (0.7 * W) + (5 * D) + (2 * Q) + (1 * F) - C
         score = (2 * V) + (4 * H) + (0.7 * W) + (5 * D) + (2 * Q) + (1 * F) - C
         score += (E * 50)  # Massive override for emergencies
         
         intensity_scores[lane] = score
-        
-        # Dynamic GreenTime = 10 + (1.2 * V) + (10 * D) + (0.3 * W)
         dynamic_green = 10 + (1.2 * V) + (10 * D) + (0.3 * W)
         green_timers[lane] = min(90.0, max(10.0, dynamic_green))
+        automation_state["latest_densities"][lane] = round(D, 2)
 
-    # Find the lane with the highest priority
+    automation_state["latest_scores"] = {k: round(v, 1) for k, v in intensity_scores.items()}
+    automation_state["latest_green_timers"] = {k: round(v, 1) for k, v in green_timers.items()}
+
     sorted_lanes = sorted(intensity_scores.items(), key=lambda x: x[1], reverse=True)
     best_lane, best_score = sorted_lanes[0]
     
     next_lane = None
     
     if current_lane not in LANE_ORDER:
-        # Recovery from ALL-RED
         next_lane = best_lane
     else:
         current_score = intensity_scores.get(current_lane, 0)
         current_max_green = green_timers.get(current_lane, 10.0)
         automation_state["current_max_green"] = current_max_green  # Expose for UI
         
-        # Condition 1: Current lane is empty -> Switch immediately to best
         if counts.get(current_lane, 0) == 0 and best_score > 0:
             next_lane = best_lane
-            print(f"[AUTO] Current lane empty -> Switching to {best_lane}", flush=True)
-            
-        # Condition 2: Max green time reached -> Force switch if others waiting
         elif time_since_last >= current_max_green:
             if best_lane != current_lane and best_score > 0:
                 next_lane = best_lane
-                print(f"[AUTO] Max Green Time ({current_max_green:.1f}s) reached -> Switching to {best_lane}", flush=True)
-                
-        # Condition 3: Starvation / Heavy Traffic Shift -> Threshold based to prevent oscillation
         elif time_since_last >= 5.0: # Minimum green time
             if best_lane != current_lane:
                 threshold = 15.0 # SwitchOnlyIf = NewScore > CurrentScore + Threshold
                 if best_score > (current_score + threshold):
                     next_lane = best_lane
-                    print(f"[AUTO] Dynamic Priority Shift: {current_lane}({current_score:.1f}) -> {best_lane}({best_score:.1f})", flush=True)
 
     if next_lane and next_lane != current_lane:
         automation_state["is_yellow_phase"] = True
         automation_state["yellow_trigger_lane"] = next_lane
         automation_state["last_switch_time"] = current_time
-        print(f"[AUTO] Transitioning to {next_lane}...", flush=True)
 
-    # 3. Apply via HTTP API to TRAFFIC_API (skip if not connected or no TL IDs set)
-    if control_url is None or not any(tl_ids.values()):
+    # 3. Apply via HTTP API (skip if no APIs or IDs set)
+    has_target = False
+    for entry in tl_ids.values():
+        if isinstance(entry, dict):
+            if (entry.get('id') and str(entry.get('id')).strip()) or (entry.get('api') and str(entry.get('api')).strip()):
+                has_target = True
+                break
+    
+    if not has_target:
         return
 
-    updates = []
-    for lane_name, tid in tl_ids.items():
-        if tid is None or not str(tid).strip():
-            continue
-        try:
-            tid_int = int(tid)
-            if automation_state["is_yellow_phase"] and lane_name == automation_state["current_green_lane"]:
-                updates.append({"id": tid_int, "state": "Yellow", "freeze": True})
-            elif lane_name == automation_state["current_green_lane"]:
-                updates.append({"id": tid_int, "state": "Green", "freeze": True})
+    def send_updates():
+        for lane_name, entry in tl_ids.items():
+            # Support both old (plain value) and new (dict) format
+            if isinstance(entry, dict):
+                tid = entry.get('id')
+                api_base = entry.get('api', '').strip()
             else:
-                updates.append({"id": tid_int, "state": "Red", "freeze": True})
-        except ValueError:
-            pass
+                tid = entry
+                api_base = ''
 
-    if updates:
-        def send_request():
-            try:
-                endpoint = f"{control_url.rstrip('/')}/traffic_light/set_multiple"
-                requests.post(endpoint, json={"updates": updates}, timeout=2.0)
-            except Exception as e:
-                # Silently ignore connection errors so we don't spam the console if API is down
-                pass
-        
-        # Run in thread so vision loop doesn't block if API is slow
-        t = threading.Thread(target=send_request, daemon=True)
-        t.start()
+            # Determine state for this lane
+            state = "red"
+            if automation_state["is_yellow_phase"] and lane_name == automation_state.get("yellow_trigger_lane"):
+                state = "yellow"
+            elif lane_name == automation_state["current_green_lane"] and not automation_state["is_yellow_phase"]:
+                state = "green"
+
+            # Resolve URL
+            url = None
+            if api_base:
+                if not api_base.lower().startswith(('http://', 'https://')):
+                    api_base = 'http://' + api_base
+                api_base = api_base.rstrip('/')
+                if tid and str(tid).strip():
+                    # Legacy: base + /traffic_light/<id>/set/<state>
+                    url = f"{api_base}/traffic_light/{tid}/set/{state}"
+                else:
+                    # New: base is already the full light URL, just append /set/<state>
+                    url = f"{api_base}/set/{state}"
+            elif tid and str(tid).strip() and control_url:
+                # Fallback: global controller
+                base = control_url.rstrip('/')
+                url = f"{base}/traffic_light/{tid}/set/{state}"
+
+            if url:
+                try:
+                    requests.get(url, timeout=1.5)
+                except Exception:
+                    pass
+
+    # Run in thread so vision loop doesn't block
+    threading.Thread(target=send_updates, daemon=True).start()
 
 def get_automation_data():
     return automation_state

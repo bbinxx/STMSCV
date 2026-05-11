@@ -307,6 +307,31 @@
             color: var(--cyan); word-break: break-all; margin-bottom: 8px;
         }
 
+        /* ===== ADVANCED COLLAPSIBLE ===== */
+        .adv-details {
+            border: 1px solid var(--border); border-radius: 4px;
+            background: rgba(255,255,255,.02); overflow: hidden;
+            transition: all .3s ease;
+        }
+        .adv-details[open] { background: rgba(0,212,245,.03); border-color: rgba(0,212,245,.2); }
+        .adv-summary {
+            padding: 8px 12px; font-family: 'Share Tech Mono', monospace;
+            font-size: calc(var(--fs-base) - 4px); color: var(--text-dim);
+            cursor: pointer; user-select: none; list-style: none;
+            display: flex; align-items: center; justify-content: space-between;
+            letter-spacing: 0.1em; transition: color .2s;
+        }
+        .adv-summary::-webkit-details-marker { display: none; }
+        .adv-summary::after {
+            content: '+'; font-size: 14px; color: var(--text-dim);
+            transition: transform .3s;
+        }
+        .adv-details[open] .adv-summary::after { content: '-'; color: var(--cyan); }
+        .adv-summary:hover { color: var(--text-mid); background: rgba(255,255,255,.04); }
+        .adv-details[open] .adv-summary { color: var(--cyan); border-bottom: 1px solid rgba(0,212,245,.1); }
+        .adv-details > div, .adv-details > .section-head { padding: 0 12px; }
+        .adv-details[open] { padding-bottom: 12px; }
+
         /* ===== ROI CANVAS ===== */
         .roi-wrap { position: relative; background: #000; border: 1px solid var(--border); margin-bottom: 10px; overflow: hidden; }
         #roi-img   { display: block; width: 100%; height: auto; }
@@ -314,16 +339,38 @@
 
         /* ===== TL MAPPING ===== */
         .tl-mapping-list { display: flex; flex-direction: column; gap: 10px; }
-        .tl-map-row { display: flex; align-items: flex-end; gap: 10px; padding: 8px; background: rgba(255,255,255,.02); border-radius: 4px; }
+        .tl-mapping-list { display: flex; flex-direction: column; gap: 10px; padding: 10px; }
+        .tl-map-row { display: flex; align-items: center; justify-content: space-between; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
         .tl-test-btns { display: flex; gap: 4px; }
-        .tbtn {
-            width: 28px; height: 28px; border-radius: 4px; border: 1px solid rgba(255,255,255,.1);
-            background: #222; color: #fff; cursor: pointer; font-family: 'Share Tech Mono', monospace;
-            font-size: 11px; display: flex; align-items: center; justify-content: center; transition: .2s;
-        }
-        .tbtn-r:hover { background: var(--red);    color: white; border-color: var(--red); }
-        .tbtn-y:hover { background: var(--yellow); color: black; border-color: var(--yellow); }
-        .tbtn-g:hover { background: var(--green);  color: black; border-color: var(--green); }
+        .tbtn { width: 24px; height: 24px; border: none; border-radius: 4px; font-size: 10px; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+        .tbtn-r { background: #401010; color: var(--red); border: 1px solid var(--red); }
+        .tbtn-y { background: #403010; color: var(--yellow); border: 1px solid var(--yellow); }
+        .tbtn-g { background: #104020; color: var(--green); border: 1px solid var(--green); }
+
+        /* New Compact TL Grid */
+        .tl-grid { display: flex; flex-direction: column; padding: 0 10px 10px 10px; font-family: 'Share Tech Mono', monospace; }
+        .tl-grid-head { display: grid; grid-template-columns: 60px 60px 1fr 80px; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border-hi); color: var(--text-dim); font-size: 10px; text-transform: uppercase; }
+        .tl-grid-row { display: grid; grid-template-columns: 60px 60px 1fr 80px; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); }
+        .tl-grid-row:last-child { border-bottom: none; }
+        
+        .lane-tag { font-size: 11px; font-weight: 600; padding: 2px 4px; border-radius: 3px; text-align: center; }
+        .lane-tag.n { background: rgba(0, 212, 245, 0.1); color: var(--cyan); }
+        .lane-tag.s { background: rgba(0, 232, 122, 0.1); color: var(--green); }
+        .lane-tag.e { background: rgba(245, 196, 0, 0.1); color: var(--yellow); }
+        .lane-tag.w { background: rgba(240, 48, 80, 0.1); color: var(--red); }
+
+        .grid-input { background: var(--bg-0); border: 1px solid var(--border); color: #fff; padding: 4px 6px; font-size: 12px; border-radius: 3px; width: 100%; transition: border-color 0.2s; }
+        .grid-input:focus { border-color: var(--cyan); outline: none; }
+        
+        .grid-btns { display: flex; gap: 4px; justify-content: center; }
+        .dot-btn { width: 16px; height: 16px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; transition: transform 0.1s, border-color 0.2s; background: var(--bg-3); }
+        .dot-btn:hover { transform: scale(1.2); }
+        .dot-btn.r { border-color: var(--red); }
+        .dot-btn.r:active { background: var(--red); }
+        .dot-btn.y { border-color: var(--yellow); }
+        .dot-btn.y:active { background: var(--yellow); }
+        .dot-btn.g { border-color: var(--green); }
+        .dot-btn.g:active { background: var(--green); }
 
         /* ===== TL VISUAL ===== */
         .tl-visual { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
@@ -743,63 +790,73 @@
             <button class="fwin-btn close-btn" title="Close">X</button>
         </div>
         <div class="fwin-body">
-            <div class="section-head">FLASK SERVER</div>
-            <div class="form-grid-2">
-                <div class="form-group"><label class="form-label">FLASK HOST</label><input type="text" class="form-input" id="cfg-flask-host" placeholder="0.0.0.0"></div>
-                <div class="form-group"><label class="form-label">FLASK PORT</label><input type="number" class="form-input" id="cfg-flask-port" placeholder="5050"></div>
-            </div>
-            <div class="section-head">CYCLE SETTINGS</div>
-            <div class="form-group">
-                <label class="form-label">CYCLE TIMER (S)</label>
-                <input type="number" class="form-input" id="cfg-cycle-timer" placeholder="30" min="5">
-                <span class="form-hint">Green phase duration for automated mode.</span>
-            </div>
-            <div class="section-head">CONTROLLER API</div>
+            <!-- 1. CORE CONTROLLER SETTINGS -->
+            <div class="section-head">SYSTEM CONTROLLER</div>
             <div class="form-group"><label class="form-label">CONTROLLER HOST</label><input type="text" class="form-input" id="cfg-controller-host" placeholder="127.0.0.1"></div>
             <div class="form-grid-2">
-                <div class="form-group"><label class="form-label">CONTROLLER PORT</label><input type="number" class="form-input" id="cfg-controller-port" placeholder="2000"></div>
+                <div class="form-group"><label class="form-label">PORT</label><input type="number" class="form-input" id="cfg-controller-port" placeholder="2000"></div>
                 <div class="form-group"><label class="form-label">TIMEOUT (S)</label><input type="number" class="form-input" id="cfg-timeout" step="0.1" placeholder="3"></div>
             </div>
-            <div class="form-group"><button class="btn" id="btn-test-api" type="button">TEST CONTROLLER API</button></div>
-            <div class="form-group"><button class="btn" id="btn-test-feed" type="button">TEST LIVE FEED</button></div>
-            <div class="section-head">LIVE FEED SOURCE</div>
+            
+            <div style="display:flex; gap:8px; margin-bottom:14px;">
+                <button class="btn btn-green" style="flex:1" id="btn-toggle-connect">CONNECT CONTROLLER</button>
+            </div>
+
+            <!-- 2. VISION & FEED -->
+            <div class="section-head">VISION &amp; FEED</div>
             <div class="form-group">
-                <label class="form-label">FEED URL / DEVICE INDEX</label>
+                <label class="form-label">LIVE FEED URL / DEVICE</label>
                 <input type="text" class="form-input" id="cfg-live-url" placeholder="http://... or 0">
             </div>
-            <div class="section-head">MODE 2 CAMERA MAPPING</div>
+            <div class="form-grid-2">
+                <div class="form-group"><label class="form-label">CYCLE TIMER (S)</label><input type="number" class="form-input" id="cfg-cycle-timer" placeholder="30"></div>
+                <div class="form-group"><label class="form-label">YOLO MODEL</label><input type="text" class="form-input" id="cfg-yolo" placeholder="yolov8n.pt"></div>
+            </div>
+
+            <!-- 3. MODE 2 MAPPING -->
+            <div class="section-head">MULTI-CAM MAPPING</div>
             <div class="form-group">
-                <label class="form-label">PASTE MULTI-CAM LINKS (one per line)</label>
-                <textarea class="form-input" id="cfg-mode2-links" style="height:80px;font-family:monospace;resize:vertical;"></textarea>
+                <label class="form-label">PASTE LINKS (N, S, E, W)</label>
+                <textarea class="form-input" id="cfg-mode2-links" style="height:60px;font-family:monospace;resize:vertical;" placeholder="http://...&#10;http://..."></textarea>
             </div>
-            <div class="form-grid-2">
-                <div class="form-group"><label class="form-label">NORTH SOURCE</label><input type="text" class="form-input" id="mode2-north" placeholder="rtsp://..."></div>
-                <div class="form-group"><label class="form-label">SOUTH SOURCE</label><input type="text" class="form-input" id="mode2-south" placeholder="rtsp://..."></div>
-            </div>
-            <div class="form-grid-2">
-                <div class="form-group"><label class="form-label">EAST SOURCE</label><input type="text" class="form-input" id="mode2-east" placeholder="rtsp://..."></div>
-                <div class="form-group"><label class="form-label">WEST SOURCE</label><input type="text" class="form-input" id="mode2-west" placeholder="rtsp://..."></div>
-            </div>
-            <div class="form-group"><button class="btn" id="btn-apply-mode2-links" type="button">APPLY MODE2 LINKS</button></div>
-            <div class="section-head">DETECTION MODEL</div>
-            <div class="form-group"><label class="form-label">YOLO MODEL PATH</label><input type="text" class="form-input" id="cfg-yolo" placeholder="yolov8n.pt"></div>
-            <div class="section-head">DETECTION ENGINE</div>
-            <div class="form-grid-2">
-                <div class="form-group"><label class="form-label">CONFIDENCE</label><input type="number" class="form-input" id="cfg-det-conf" step="0.05" placeholder="0.20"></div>
-                <div class="form-group"><label class="form-label">IOU THRESHOLD</label><input type="number" class="form-input" id="cfg-det-iou" step="0.05" placeholder="0.45"></div>
-            </div>
-            <div class="form-group"><label class="form-label">RESOLUTION (PX)</label><input type="number" class="form-input" id="cfg-det-imgsz" step="32" placeholder="640"></div>
-            <div class="section-head">API ENDPOINTS</div>
-            <div class="api-row" id="api-ep-feed">http://localhost:5050/api/live_feed</div>
-            <div class="api-row" id="api-ep-counts">http://localhost:5050/api/lane_counts</div>
-            <div class="api-row" id="api-ep-cam">http://localhost:5050/api/camera/status</div>
+            
+            <!-- Hidden grid for individual source overrides -->
+            <details class="adv-details">
+                <summary class="adv-summary">INDIVIDUAL SOURCE OVERRIDES</summary>
+                <div class="form-grid-2" style="margin-top:8px;">
+                    <div class="form-group"><label class="form-label">NORTH</label><input type="text" class="form-input" id="mode2-north"></div>
+                    <div class="form-group"><label class="form-label">SOUTH</label><input type="text" class="form-input" id="mode2-south"></div>
+                </div>
+                <div class="form-grid-2">
+                    <div class="form-group"><label class="form-label">EAST</label><input type="text" class="form-input" id="mode2-east"></div>
+                    <div class="form-group"><label class="form-label">WEST</label><input type="text" class="form-input" id="mode2-west"></div>
+                </div>
+            </details>
+
+            <!-- 4. ADVANCED / UNWANTED THINGS -->
+            <details class="adv-details" style="margin-top:10px;">
+                <summary class="adv-summary">ADVANCED / SYSTEM SETTINGS</summary>
+                <div class="section-head" style="margin-top:10px;">FLASK SERVER</div>
+                <div class="form-grid-2">
+                    <div class="form-group"><label class="form-label">HOST</label><input type="text" class="form-input" id="cfg-flask-host"></div>
+                    <div class="form-group"><label class="form-label">PORT</label><input type="number" class="form-input" id="cfg-flask-port"></div>
+                </div>
+                <div class="section-head">DETECTION ENGINE</div>
+                <div class="form-grid-2">
+                    <div class="form-group"><label class="form-label">CONFIDENCE</label><input type="number" class="form-input" id="cfg-det-conf" step="0.05"></div>
+                    <div class="form-group"><label class="form-label">IOU</label><input type="number" class="form-input" id="cfg-det-iou" step="0.05"></div>
+                </div>
+                <div class="section-head">API ENDPOINTS</div>
+                <div class="api-row" id="api-ep-feed">--</div>
+                <div class="api-row" id="api-ep-counts">--</div>
+                <div class="api-row" id="api-ep-cam">--</div>
+            </details>
+
             <div style="margin-top:20px; display:flex; flex-direction:column; gap:8px;">
-                <button class="btn btn-yellow" id="btn-save-only">SAVE CONFIG</button>
-                <button class="btn btn-green"  id="btn-toggle-connect">CONNECT</button>
-                <button class="btn"             id="btn-start-system">▶ START SYSTEM</button>
-                <button class="btn btn-red"     id="btn-stop-system">■ STOP SYSTEM</button>
+                <button class="btn" id="btn-toggle-system" style="height:44px; font-weight:bold; letter-spacing:0.1em;">▶ START SYSTEM</button>
+                <button class="btn btn-yellow" id="btn-save-only">SAVE CONFIGURATION</button>
             </div>
-            <div class="form-hint" style="margin-top:10px; text-align:center;">SERVER RUNNING ON PORT 5050</div>
+            <div class="form-hint" style="margin-top:10px; text-align:center;">HMI SERVICE ACTIVE ON PORT 5050</div>
         </div>
         <div class="fwin-resize"></div>
     </div>
@@ -849,7 +906,7 @@
     </div>
 
     <!-- WINDOW: Traffic Lights -->
-    <div class="fwin" id="win-tl" style="width:360px; top:80px; left:480px; display:none;">
+    <div class="fwin" id="win-tl" style="width:400px; top:80px; left:480px; display:none;">
         <div class="fwin-titlebar">
             <span class="fwin-title">[ TRAFFIC LIGHTS / MAPPING ]</span>
             <button class="fwin-btn pin-btn" title="Pin">P</button>
@@ -875,14 +932,55 @@
                     <span class="tl-name">WEST</span><span class="tl-id" id="tl-id-West">--</span>
                 </div>
             </div>
-            <div class="section-head">ACTOR ID MAPPING & TEST</div>
-            <div class="tl-mapping-list">
-                <div class="tl-map-row"><div style="flex:1;"><label class="form-label">NORTH ID</label><input type="number" class="form-input" id="tl-north" placeholder="ID"></div><div class="tl-test-btns"><button class="tbtn tbtn-r" onclick="testTL('North','red')">R</button><button class="tbtn tbtn-y" onclick="testTL('North','yellow')">Y</button><button class="tbtn tbtn-g" onclick="testTL('North','green')">G</button></div></div>
-                <div class="tl-map-row"><div style="flex:1;"><label class="form-label">SOUTH ID</label><input type="number" class="form-input" id="tl-south" placeholder="ID"></div><div class="tl-test-btns"><button class="tbtn tbtn-r" onclick="testTL('South','red')">R</button><button class="tbtn tbtn-y" onclick="testTL('South','yellow')">Y</button><button class="tbtn tbtn-g" onclick="testTL('South','green')">G</button></div></div>
-                <div class="tl-map-row"><div style="flex:1;"><label class="form-label">EAST ID</label><input type="number" class="form-input" id="tl-east" placeholder="ID"></div><div class="tl-test-btns"><button class="tbtn tbtn-r" onclick="testTL('East','red')">R</button><button class="tbtn tbtn-y" onclick="testTL('East','yellow')">Y</button><button class="tbtn tbtn-g" onclick="testTL('East','green')">G</button></div></div>
-                <div class="tl-map-row"><div style="flex:1;"><label class="form-label">WEST ID</label><input type="number" class="form-input" id="tl-west" placeholder="ID"></div><div class="tl-test-btns"><button class="tbtn tbtn-r" onclick="testTL('West','red')">R</button><button class="tbtn tbtn-y" onclick="testTL('West','yellow')">Y</button><button class="tbtn tbtn-g" onclick="testTL('West','green')">G</button></div></div>
+            <div class="section-head">TL BINDINGS (API URL ONLY)</div>
+            <div class="tl-grid" style="grid-template-columns: 60px 1fr 80px;">
+                <div class="tl-grid-head" style="grid-template-columns: 60px 1fr 80px;">
+                    <span>LANE</span><span>BASE API URL (INC. ID)</span><span>TEST</span>
+                </div>
+                <!-- North -->
+                <div class="tl-grid-row" style="grid-template-columns: 60px 1fr 80px;">
+                    <span class="lane-tag n">NORTH</span>
+                    <input type="text" class="grid-input" id="api-north" placeholder="http://127.0.0.1:5000/traffic_light/142">
+                    <div class="grid-btns">
+                        <button class="dot-btn r" onclick="testTL('North','red')" title="Red"></button>
+                        <button class="dot-btn y" onclick="testTL('North','yellow')" title="Yellow"></button>
+                        <button class="dot-btn g" onclick="testTL('North','green')" title="Green"></button>
+                    </div>
+                </div>
+                <!-- South -->
+                <div class="tl-grid-row" style="grid-template-columns: 60px 1fr 80px;">
+                    <span class="lane-tag s">SOUTH</span>
+                    <input type="text" class="grid-input" id="api-south" placeholder="http://127.0.0.1:5000/traffic_light/145">
+                    <div class="grid-btns">
+                        <button class="dot-btn r" onclick="testTL('South','red')" title="Red"></button>
+                        <button class="dot-btn y" onclick="testTL('South','yellow')" title="Yellow"></button>
+                        <button class="dot-btn g" onclick="testTL('South','green')" title="Green"></button>
+                    </div>
+                </div>
+                <!-- East -->
+                <div class="tl-grid-row" style="grid-template-columns: 60px 1fr 80px;">
+                    <span class="lane-tag e">EAST</span>
+                    <input type="text" class="grid-input" id="api-east" placeholder="http://127.0.0.1:5000/traffic_light/148">
+                    <div class="grid-btns">
+                        <button class="dot-btn r" onclick="testTL('East','red')" title="Red"></button>
+                        <button class="dot-btn y" onclick="testTL('East','yellow')" title="Yellow"></button>
+                        <button class="dot-btn g" onclick="testTL('East','green')" title="Green"></button>
+                    </div>
+                </div>
+                <!-- West -->
+                <div class="tl-grid-row" style="grid-template-columns: 60px 1fr 80px;">
+                    <span class="lane-tag w">WEST</span>
+                    <input type="text" class="grid-input" id="api-west" placeholder="http://127.0.0.1:5000/traffic_light/150">
+                    <div class="grid-btns">
+                        <button class="dot-btn r" onclick="testTL('West','red')" title="Red"></button>
+                        <button class="dot-btn y" onclick="testTL('West','yellow')" title="Yellow"></button>
+                        <button class="dot-btn g" onclick="testTL('West','green')" title="Green"></button>
+                    </div>
+                </div>
             </div>
-            <button class="btn btn-sm" id="btn-update-tl" style="margin-top:10px;">UPDATE BINDINGS</button>
+            <div style="padding:10px; border-top:1px solid var(--border);">
+                <button class="btn-cyan w-100" id="btn-update-tl">UPDATE BINDINGS & APIS</button>
+            </div>
         </div>
         <div class="fwin-resize"></div>
     </div>
@@ -927,8 +1025,7 @@
         <!-- System start / stop -->
         <div class="m2-toggle-wrap">
             <span class="m2-toggle-label">SYSTEM:</span>
-            <button class="m2-sys-btn start" id="m2-btn-start" onclick="m2SystemStart()">▶ START</button>
-            <button class="m2-sys-btn stop"  id="m2-btn-stop"  onclick="m2SystemStop()"  style="margin-left:6px;">■ STOP</button>
+            <button class="m2-sys-btn" id="m2-btn-toggle" onclick="toggleSystem()">▶ START</button>
         </div>
         <div class="m2-tab-pipe"></div>
 

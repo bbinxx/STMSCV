@@ -32,7 +32,13 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS config
                  (key TEXT PRIMARY KEY, value TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS tls
-                 (lane TEXT PRIMARY KEY, actor_id INTEGER)''')
+                 (lane TEXT PRIMARY KEY, actor_id INTEGER, api_url TEXT)''')
+    # Migration: Add api_url to tls if it was created previously without it
+    try:
+        c.execute("ALTER TABLE tls ADD COLUMN api_url TEXT")
+    except sqlite3.OperationalError:
+        pass # Already exists
+    
     c.execute('''CREATE TABLE IF NOT EXISTS roi_sets
                  (name TEXT PRIMARY KEY, config TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS mode2_cameras
@@ -189,13 +195,20 @@ system_started = False
 # Checks for required runtime configuration before starting
 
 def check_start_prereqs():
-    """Only requires YOLO model; controller connectivity is optional."""
-    missing = []
+    """Ensures a YOLO model is available, providing a default if none is set."""
+    global config, model
     if not config.get('yolo_model'):
-        missing.append('yolo_model (set in CON panel)')
-    if config.get('yolo_model') and model is None:
-        missing.append('yolo_model not loaded')
-    return missing
+        print("[AUTO] No YOLO model path set. Using default 'yolov8n.pt'.", flush=True)
+        config['yolo_model'] = 'yolov8n.pt'
+        save_config(config)
+        load_yolo_model('yolov8n.pt')
+        
+    if model is None:
+        load_yolo_model(config.get('yolo_model'))
+        
+    if model is None:
+        return ['yolo_model failed to load']
+    return []
 
 # Global automation state now handled by detection module
 
@@ -297,7 +310,7 @@ def _read_mjpeg_url(direction, src):
             src_now = mode2_cam_config.get(direction, '').strip()
             if src_now != src:
                 return
-            chunk = stream.read(4096)
+            chunk = stream.read(65536) # Read in larger chunks for better performance
             if not chunk:
                 return
             buf += chunk
@@ -398,8 +411,13 @@ def mode2_capture_loop(direction):
                         break # Break to outer loop for retry
 
                 mode2_raw_frames[direction] = frame
-                mode2_frames[direction] = _apply_detection_overlay(direction, frame)
-                time.sleep(0.03)
+                # The annotated frame is now updated by a background detection worker
+                # to keep this capture loop running at full speed.
+                if not isinstance(src_val, str) or _is_mjpeg_url(src_val):
+                    time.sleep(0.001) 
+                else:
+                    time.sleep(0.03) 
+
 
             cap.release()
             mode2_captures.pop(direction, None)
@@ -416,16 +434,40 @@ def start_mode2_direction(direction):
     if direction in mode2_threads and mode2_threads[direction].is_alive():
         return
 
-    t = threading.Thread(target=mode2_capture_loop, args=(direction,), daemon=True, name=f"Mode2_{direction}")
+    t = threading.Thread(target=mode2_capture_loop, args=(direction,), daemon=True, name=f"Mode2_Cap_{direction}")
     mode2_threads[direction] = t
     t.start()
+    
+    # Also start a detection worker for this direction
+    dt = threading.Thread(target=mode2_detection_worker, args=(direction,), daemon=True, name=f"Mode2_Det_{direction}")
+    dt.start()
+
+def mode2_detection_worker(direction):
+    """Background detection for Mode 2 to avoid blocking capture threads"""
+    global mode2_frames, mode2_raw_frames, mode2_counts, mode2_scores, mode2_heavies
+    print(f"[MODE2] Detection worker started for {direction}", flush=True)
+    while True:
+        try:
+            frame = mode2_raw_frames.get(direction)
+            if frame is not None:
+                # Run detection on the latest raw frame
+                mode2_frames[direction] = _apply_detection_overlay(direction, frame)
+            else:
+                time.sleep(0.1)
+            time.sleep(0.01) # Small rest
+        except Exception as e:
+            print(f"[MODE2] Det error for {direction}: {e}")
+            time.sleep(1)
 
 def generate_mode2_stream(direction):
+    """MJPEG generator for Mode 2 directions"""
+    last_frame_bytes = None
     while True:
         frame = mode2_frames.get(direction)
-        if frame:
+        if frame and frame != last_frame_bytes:
             yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
-        time.sleep(0.04)
+            last_frame_bytes = frame
+        time.sleep(0.01) # Poll for new frames at 100Hz
 
 # --- Dynamic Settings Configurations ---
 def load_rois():
@@ -456,22 +498,26 @@ def save_rois():
 def load_tls():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute("SELECT lane, actor_id FROM tls")
+    c.execute("SELECT lane, actor_id, api_url FROM tls")
     rows = c.fetchall()
     conn.close()
     
-    tls_data = {"North": None, "South": None, "East": None, "West": None}
+    tls_data = {"North": {"id": None, "api": ""}, "South": {"id": None, "api": ""}, "East": {"id": None, "api": ""}, "West": {"id": None, "api": ""} }
     if rows:
-        for lane, actor_id in rows:
-            tls_data[lane] = int(actor_id) if actor_id is not None else None
+        for lane, actor_id, api_url in rows:
+            if lane in tls_data:
+                tls_data[lane]["id"] = int(actor_id) if actor_id is not None else None
+                tls_data[lane]["api"] = api_url if api_url is not None else ""
     return tls_data
 
 def save_tls(tls_data):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    for lane, actor_id in tls_data.items():
-        c.execute("INSERT OR REPLACE INTO tls (lane, actor_id) VALUES (?, ?)",
-                  (lane, actor_id))
+    for lane, data in tls_data.items():
+        actor_id = data.get("id")
+        api_url = data.get("api", "")
+        c.execute("INSERT OR REPLACE INTO tls (lane, actor_id, api_url) VALUES (?, ?, ?)",
+                  (lane, actor_id, api_url))
     conn.commit()
     conn.close()
 
@@ -644,10 +690,12 @@ def vision_processing_loop():
                 if external_feed_thread is None or not external_feed_thread.is_alive():
                     _start_external_feed(config['live_feed_url'])
 
-            if not image_queue.empty():
+            # Get the LATEST frame from the queue, discard any older ones to stay realtime
+            img_data = None
+            while not image_queue.empty():
                 img_data = image_queue.get()
-                if img_data is None:
-                    continue
+                
+            if img_data is not None:
                 frame = img_data.copy()
                 
                 rois_to_use = ROIS.copy() if ROI_ENABLED else {}
@@ -763,21 +811,14 @@ def api_lane_counts():
     counts = {d: mode2_counts.get(d, 0) for d in DIRECTIONS} if control_mode == 2 else lane_counts
 
     # Real-time traffic light states from automation_state
-    tl_states = {l: "red" for l in ["North", "South", "East", "West"]}
-    green_lane = None
-    if any(v > 0 for v in counts.values()):
+    tl_states = {l: "red" for l in DIRECTIONS}
+    green_lane = auto_data.get("current_green_lane")
+    
+    if green_lane in tl_states:
         if auto_data.get("is_yellow_phase"):
-            green_lane = auto_data.get("current_green_lane")
-            if green_lane in tl_states:
-                tl_states[green_lane] = "yellow"
+            tl_states[green_lane] = "yellow"
         else:
-            green_lane = auto_data.get("current_green_lane")
-            if green_lane in tl_states:
-                tl_states[green_lane] = "green"
-    else:
-        green_lane = None
-        # If there are no vehicles, enforce all-red regardless of prior automation state.
-        tl_states = {l: "red" for l in ["North", "South", "East", "West"]}
+            tl_states[green_lane] = "green"
 
     return json.dumps({
         "counts": counts,
@@ -796,43 +837,22 @@ def api_lane_counts():
 
 @app.route('/api/intensity_scores')
 def api_intensity_scores():
-    """Returns per-lane intensity scores and wait times using the Advanced Adaptive AI Traffic Control Algorithm."""
+    """Returns the latest intensity data directly from the automation state machine."""
     from detection import automation_state
-    scores = {}
-    wait_times = {}
-    green_timers = {}
     
     current_lane = automation_state.get("current_green_lane")
     last_switch = automation_state.get("last_switch_time", 0)
     time_since_last = time.time() - last_switch if last_switch else 0
     
-    for lane in DIRECTIONS:
-        V = mode2_counts.get(lane, 0)
-        H = mode2_heavies.get(lane, 0)
-        E = mode2_scores.get(lane, 0) # Emergency counts
-        W = automation_state.get("wait_times", {}).get(lane, 0.0)
-        
-        D = min(1.0, (V + H * 2.0) / 10.0)
-        Q = V
-        F = V / 10.0
-        C = 10 if (lane == current_lane and time_since_last < 5.0) else 0
-        
-        score = (2 * V) + (4 * H) + (0.7 * W) + (5 * D) + (2 * Q) + (1 * F) - C
-        score += (E * 50)
-        
-        dynamic_green = 10 + (1.2 * V) + (10 * D) + (0.3 * W)
-        
-        scores[lane] = round(score, 1)
-        wait_times[lane] = round(W, 1)
-        green_timers[lane] = round(min(90.0, max(10.0, dynamic_green)), 1)
-        
     return jsonify({
-        "scores":     scores,
-        "wait_times": wait_times,
-        "green_timers": green_timers,
-        "green_lane": current_lane,
-        "is_yellow":  automation_state.get("is_yellow_phase", False),
-        "system_started": system_started,
+        "scores":       automation_state.get("latest_scores", {}),
+        "wait_times":   {k: round(v, 1) for k, v in automation_state.get("wait_times", {}).items()},
+        "green_timers": automation_state.get("latest_green_timers", {}),
+        "densities":    automation_state.get("latest_densities", {}),
+        "green_lane":   current_lane,
+        "is_yellow":    automation_state.get("is_yellow_phase", False),
+        "time_elapsed": round(time_since_last, 1),
+        "system_started": system_started
     })
 
 @app.route('/api/live_feed')
@@ -856,24 +876,42 @@ def api_get_config():
     global config
     return jsonify(config)
 
-@app.route('/api/system', methods=['POST'])
+@app.route('/api/system', methods=['GET', 'POST'])
 def api_system():
-    """Simple start/stop endpoint callable directly from the frontend."""
-    global system_started
-    data = request.get_json(force=True) or {}
-    action = data.get('action', '')
-    if action == 'start':
-        missing = check_start_prereqs()
-        if missing:
-            return jsonify({'status': 'error', 'message': 'Missing: ' + ', '.join(missing)})
-        system_started = True
-        print('[HMI] System STARTED via API', flush=True)
-        return jsonify({'status': 'success', 'message': 'System started', 'system_started': True})
-    elif action == 'stop':
-        system_started = False
-        print('[HMI] System STOPPED via API', flush=True)
-        return jsonify({'status': 'success', 'message': 'System stopped', 'system_started': False})
-    return jsonify({'status': 'error', 'message': 'Unknown action. Use start or stop.'})
+    global system_started, connection_status, last_process_time, lane_counts
+    if request.method == 'POST':
+        data = request.get_json(force=True) or {}
+        action = data.get('action', '')
+        if action == 'start':
+            missing = check_start_prereqs()
+            if missing:
+                return jsonify({'status': 'error', 'message': 'Missing: ' + ', '.join(missing)})
+            system_started = True
+            return jsonify({'status': 'success', 'message': 'System started'})
+        elif action == 'stop':
+            system_started = False
+            return jsonify({'status': 'success', 'message': 'System stopped'})
+    
+    # GET: Return full status for polling
+    auto_data = get_automation_data()
+    is_detecting = False
+    if last_process_time > 0 and (time.time() - last_process_time < 5.0):
+        is_detecting = True
+        
+    # Build logs (for now, empty or from a global list if implemented)
+    # We'll just return an empty list for now to satisfy the frontend
+    logs = [] 
+
+    return jsonify({
+        "connection_status": connection_status,
+        "system_status": "Running" if system_started else "Stopped",
+        "detection_active": is_detecting,
+        "timer": auto_data.get("timer", 0.0),
+        "max_timer": config.get("cycle_timer", 30.0),
+        "current_lane": auto_data.get("current_green_lane", "None") or "None",
+        "total_vehicles": sum(lane_counts.values()),
+        "logs": logs
+    })
 
 @app.route('/tl_panel', methods=['GET', 'POST'])
 def tl_panel_route():
@@ -881,61 +919,17 @@ def tl_panel_route():
     if request.method == 'POST':
         data = request.json if request.is_json else request.form
         
-        new_ids = {
-            'North': data.get('tl_north'),
-            'South': data.get('tl_south'),
-            'East': data.get('tl_east'),
-            'West': data.get('tl_west')
+        new_configs = {
+            'North': {'id': None, 'api': data.get('api_north', '')},
+            'South': {'id': None, 'api': data.get('api_south', '')},
+            'East':  {'id': None, 'api': data.get('api_east', '')},
+            'West':  {'id': None, 'api': data.get('api_west', '')}
         }
         
-        invalid_ids = []
-        validated_ids = {}
-        
-        valid_actors = set()
-        if connection_status == "Connected":
-            host = config.get("controller_host", "localhost")
-            port = config.get("controller_port", 5000)
-            url = f"http://{host}:{port}/traffic_lights/all"
-            try:
-                resp = requests.get(url, timeout=2.0)
-                if resp.status_code == 200:
-                    for tl in resp.json():
-                        valid_actors.add(tl.get("id"))
-            except:
-                pass
-
-        for lane, tid in new_ids.items():
-            if tid and str(tid).strip():
-                try:
-                    actor_id = int(tid)
-                    # Check actor existence
-                    if connection_status == "Connected":
-                        if actor_id not in valid_actors and valid_actors:
-                            invalid_ids.append(f"{lane}:{tid}")
-                        else:
-                            validated_ids[lane] = actor_id
-                    else:
-                        invalid_ids.append(f"CONTROL_API_OFFLINE({lane})")
-                except ValueError:
-                    invalid_ids.append(f"INVALID_NUM({lane}:{tid})")
-            else:
-                validated_ids[lane] = None
-
-        if invalid_ids:
-            msg = f"Validation Failed: {', '.join(invalid_ids)}. IDs must exist in active CONTROL session."
-            if request.is_json:
-                return jsonify({"status": "error", "message": msg})
-            return render_template('tl_panel.html', tl_ids=TL_IDS, error=msg)
-
-        # Update and Save only if everything is valid
-        for lane, val in validated_ids.items():
-            TL_IDS[lane] = val
-            
+        TL_IDS.update(new_configs)
         save_tls(TL_IDS)
         
-        if request.is_json:
-            return jsonify({"status": "success", "message": "Traffic Light IDs validated and saved"})
-        return redirect(url_for('tl_panel_route'))
+        return jsonify({'status': 'success', 'message': 'API URLs updated successfully'})
     
     # Return JSON if requested, else template
     if request.headers.get('Accept') == 'application/json':
@@ -978,6 +972,31 @@ def api_controller_status():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 502
 
+
+@app.route('/api/tl_proxy', methods=['POST'])
+def api_tl_proxy():
+    """Proxy request to external traffic light API to bypass CORS"""
+    data = request.get_json(force=True, silent=True) or {}
+    base_url = data.get('url', '').strip()
+    state = data.get('state', '').lower()
+
+    if not base_url:
+        return jsonify({"status": "error", "message": "No API URL provided"}), 400
+
+    if not base_url.lower().startswith(('http://', 'https://')):
+        base_url = 'http://' + base_url
+
+    url = f"{base_url.rstrip('/')}/set/{state}"
+    
+    try:
+        resp = requests.get(url, timeout=2.0)
+        return jsonify({
+            "status": "success" if resp.ok else "error",
+            "code": resp.status_code,
+            "message": f"Proxy: {resp.status_code} {resp.reason}"
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"Proxy Failed: {str(e)}"}), 502
 
 @app.route('/api/tl_test', methods=['POST'])
 def tl_test_mode():
@@ -1169,15 +1188,18 @@ def control_panel():
 def generate_video_stream():
     global latest_frame, BLANK_FRAME_BYTES
     print("[DEBUG] Video Stream Generator Started for a client")
+    last_yielded = None
     try:
         while True:
             # Check current data
             frame_to_yield = latest_frame if latest_frame is not None else BLANK_FRAME_BYTES
             
-            if frame_to_yield:
+            if frame_to_yield and frame_to_yield != last_yielded:
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + frame_to_yield + b'\r\n')
-            time.sleep(0.05)
+                last_yielded = frame_to_yield
+            
+            time.sleep(0.01) # Check for updates at 100Hz
     except Exception as e:
         print(f"[DEBUG] Video client disconnected: {e}")
 
@@ -1203,6 +1225,33 @@ def mode2_config_api():
     global mode2_cam_config
     if request.method == 'POST':
         data = request.json or {}
+        action = data.get('action')
+        
+        if action == 'toggle_mode':
+            from detection import automation_state
+            # Toggle between 1 (Fixed) and 2 (Intensity)
+            new_mode = 2 if automation_state.get('control_mode', 1) == 1 else 1
+            automation_state['control_mode'] = new_mode
+            mode_name = "Intensity Based" if new_mode == 2 else "Fixed Cycle"
+            return jsonify({
+                'status': 'success', 
+                'mode': new_mode, 
+                'mode_name': mode_name,
+                'message': f"Control mode switched to {mode_name}"
+            })
+
+        if action == 'set_source':
+            # applyM2Source sends { action:'set_source', dir:'North', src:'...' }
+            direction = data.get('dir')
+            src = str(data.get('src', '')).strip()
+            if direction in DIRECTIONS:
+                if mode2_cam_config.get(direction, '').strip() != src:
+                    mode2_cam_config[direction] = src
+                    save_mode2_cameras(mode2_cam_config)
+                    start_mode2_direction(direction)
+                return jsonify({'status': 'success', 'message': f'{direction} source set', 'config': mode2_cam_config})
+            return jsonify({'status': 'error', 'message': 'Invalid direction'})
+
         changed = []
         for lane in DIRECTIONS:
             key = f'src_{lane.lower()}'
@@ -1223,7 +1272,7 @@ def mode2_rois_api():
     global mode2_rois
     if request.method == 'POST':
         data = request.json or {}
-        lane = data.get('lane')
+        lane = data.get('lane') or data.get('dir')  # JS sends 'dir', legacy sends 'lane'
         points = data.get('points')  # list of [x,y]
         if lane not in DIRECTIONS:
             return jsonify({'status': 'error', 'message': 'Invalid lane'})
@@ -1269,7 +1318,7 @@ if __name__ == '__main__':
         flask_host = config.get('flask_host', '0.0.0.0')
         flask_port = config.get('flask_port', 5050)
         print(f"Starting Smart Traffic Management App on {flask_host}:{flask_port} (Reloader: OFF)...")
-        app.run(host=flask_host, port=flask_port, debug=True, use_reloader=False)
+        app.run(host=flask_host, port=flask_port, debug=True, use_reloader=False, threaded=True)
         
     except KeyboardInterrupt:
         print("Shutting down...")
