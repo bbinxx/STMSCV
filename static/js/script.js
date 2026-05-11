@@ -634,14 +634,16 @@ window.testTL = function (lane, state) {
 };
 
 // ─── UTILS ───────────────────────────────────────────────────
-function getContainedImageBounds(img) {
-    if (!img || !img.naturalWidth || !img.clientWidth) return null;
-    const ratio = img.naturalWidth / img.naturalHeight;
-    let w = img.clientWidth;
-    let h = img.clientHeight;
+function getContainedImageBounds(el) {
+    const natW = el.naturalWidth || el.width;
+    const natH = el.naturalHeight || el.height;
+    if (!el || !natW || !el.clientWidth) return null;
+    const ratio = natW / natH;
+    let w = el.clientWidth;
+    let h = el.clientHeight;
     if (w / h > ratio) { w = h * ratio; } else { h = w / ratio; }
-    const x = (img.clientWidth - w) / 2;
-    const y = (img.clientHeight - h) / 2;
+    const x = (el.clientWidth - w) / 2;
+    const y = (el.clientHeight - h) / 2;
     return { x, y, w, h };
 }
 
@@ -1137,8 +1139,7 @@ window.applyM2Source = function(dir) {
         body: JSON.stringify({ action: 'set_source', dir, src })
     }).then(r => r.json()).then(data => {
         toast(data.message, data.status === 'success' ? 'green' : 'red');
-        const img = document.getElementById('m2-prev-' + dir);
-        if (img) img.src = `/video_feed/mode2/${dir}?t=${Date.now()}`;
+        // Canvas poller auto-refreshes — no manual src update needed
     });
 };
 
@@ -1177,11 +1178,13 @@ window.toggleM2ROIDraw = function(dir) {
         m2ROIDrawingDir = null;
         document.getElementById('m2-roi-draw-' + dir).classList.remove('active');
         document.getElementById('m2-roi-canvas-' + dir).classList.remove('drawing');
+        document.getElementById('m2-card-' + dir).classList.remove('drawing-mode');
     } else {
         if (m2ROIDrawingDir) toggleM2ROIDraw(m2ROIDrawingDir);
         m2ROIDrawingDir = dir;
         document.getElementById('m2-roi-draw-' + dir).classList.add('active');
         document.getElementById('m2-roi-canvas-' + dir).classList.add('drawing');
+        document.getElementById('m2-card-' + dir).classList.add('drawing-mode');
         if (!m2ROIPoints[dir]) m2ROIPoints[dir] = [];
         drawM2ROIScene(dir);
     }
@@ -1204,9 +1207,11 @@ window.saveM2ROI = function(dir) {
     const pts_nat = pts.map(p => {
         const x_rel = p.x - rect.x;
         const y_rel = p.y - rect.y;
+        const natW = img.naturalWidth || img.width;
+        const natH = img.naturalHeight || img.height;
         return [ 
-            Math.round(x_rel * (img.naturalWidth / rect.w)), 
-            Math.round(y_rel * (img.naturalHeight / rect.h)) 
+            Math.round(x_rel * (natW / rect.w)), 
+            Math.round(y_rel * (natH / rect.h)) 
         ];
     });
 
@@ -1304,3 +1309,75 @@ function loadExternalTLs() {
 }
 loadExternalTLs();
 
+// ─── CANVAS SNAPSHOT POLLER ────────────────────────────────
+// Polls /snapshot/mode2/<dir> every ~100ms and draws to canvas.
+// No persistent connections → page loads instantly, no spinner.
+(function() {
+    const DIRS = ['North', 'South', 'East', 'West'];
+    const CANVASES = [
+        ...DIRS.map(d => ({ id: `m2-main-${d}`, dir: d })),
+        ...DIRS.map(d => ({ id: `m2-prev-${d}`,  dir: d })),
+    ];
+
+    const activePollers = {};
+
+    function startPoller(id, dir) {
+        if (activePollers[id]) return; // already running
+        let running = true;
+        activePollers[id] = true;
+
+        const canvas = document.getElementById(id);
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const img = new Image();
+        const isMain = id.startsWith('m2-main');
+
+        async function poll() {
+            while (running) {
+                try {
+                    const endpoint = isMain ? '/snapshot/annotated/mode2/' : '/snapshot/mode2/';
+                    const url = `${endpoint}${dir}?t=${Date.now()}`;
+                    const res = await fetch(url, { cache: 'no-store' });
+                    if (res.ok) {
+                        const blob = await res.blob();
+                        const burl = URL.createObjectURL(blob);
+                        await new Promise((resolve) => {
+                            img.onload = () => {
+                                // Match canvas size to image
+                                if (canvas.width !== img.naturalWidth) {
+                                    canvas.width  = img.naturalWidth  || canvas.offsetWidth  || 640;
+                                    canvas.height = img.naturalHeight || canvas.offsetHeight || 360;
+                                }
+                                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                                URL.revokeObjectURL(burl);
+                                resolve();
+                            };
+                            img.onerror = () => { URL.revokeObjectURL(burl); resolve(); };
+                            img.src = burl;
+                        });
+                    }
+                } catch(e) { /* network hiccup, just retry */ }
+                await new Promise(r => setTimeout(r, 33)); // ~30 fps
+            }
+        }
+        poll();
+    }
+
+    // Start all pollers immediately on DOM ready (no blocking connections)
+    document.addEventListener('DOMContentLoaded', () => {
+        CANVASES.forEach(({ id, dir }) => startPoller(id, dir));
+    });
+
+    // Also auto-size canvases to their container via CSS
+    const style = document.createElement('style');
+    style.textContent = `
+        canvas.m2-snap-canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+            object-fit: cover;
+            background: #000;
+        }
+    `;
+    document.head.appendChild(style);
+})();

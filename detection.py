@@ -6,14 +6,14 @@ ALL_VEHICLE_CLASSES = None  # None => include every class reported by the model
 
 CLASS_WEIGHT = {1: 1, 2: 2, 3: 1, 5: 3, 6: 3, 7: 3, 8: 2}  # heavier vehicles raise the score more
 
-VEHICLE_KEYWORDS = ['bicycle', 'car', 'motorcycle', 'bus', 'train', 'truck', 'boat', 'van', 'taxi', 'ambulance']
+VEHICLE_KEYWORDS = ['bicycle', 'car', 'motorcycle', 'bus', 'train', 'truck', 'boat', 'van', 'taxi', 'ambulance', 'scooter', 'auto-rickshaw']
 
-DETECTION_IMG_SIZE = 416  # reduce for faster real‑time performance
+DETECTION_IMG_SIZE = 640  # increased for higher accuracy (better for bikes/small objects)
 
 _YOLO_LOCK_ATTR = '_yolo_lock'
 
 
-def process_frame(frame, model, rois, conf_thres=0.20, iou_thres=0.45, img_size=640):
+def process_frame(frame, model, rois, conf_thres=0.15, iou_thres=0.45, img_size=640):
     """
     Detect vehicles only inside each ROI region.
     """

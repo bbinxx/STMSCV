@@ -10,7 +10,7 @@ import sqlite3
 import urllib.request
 import logging
 from ultralytics import YOLO
-from flask import Flask, Response, render_template, request, redirect, url_for, jsonify
+from flask import Flask, Response, render_template, request, redirect, url_for, jsonify, make_response
 
 # Suppress Flask access logs
 log = logging.getLogger('werkzeug')
@@ -189,6 +189,14 @@ cv2.putText(_blank_img, "SIGNAL STANDBY", (210, 180), cv2.FONT_HERSHEY_SIMPLEX, 
 _, _blank_jpeg = cv2.imencode('.jpg', _blank_img)
 BLANK_FRAME_BYTES = _blank_jpeg.tobytes()
 
+# Per-direction no-source frames for Mode 2
+mode2_blank_frames = {}
+for _d in ['North', 'South', 'East', 'West']:
+    _bi = np.zeros((360, 640, 3), np.uint8)
+    cv2.putText(_bi, f"{_d.upper()} -- NO SOURCE", (140, 180), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 60, 160), 2)
+    _, _bj = cv2.imencode('.jpg', _bi)
+    mode2_blank_frames[_d] = _bj.tobytes()
+
 connection_status = "Disconnected"
 system_started = False
 
@@ -268,6 +276,7 @@ mode2_cam_config = load_mode2_cameras()   # {lane: source_str}
 mode2_rois       = load_mode2_rois()      # {lane: np.array (4,2)}
 mode2_frames     = {d: None for d in DIRECTIONS}  # {lane: jpeg_bytes (with detection overlay)}
 mode2_raw_frames = {}                     # {lane: raw np frame (for detection)}
+mode2_raw_jpeg   = {}                     # {lane: jpeg_bytes of raw frame (for fast preview)}
 mode2_counts     = {d: 0 for d in DIRECTIONS}  # {lane: int}
 mode2_scores     = {d: 0 for d in DIRECTIONS}  # {lane: int} weighted scores (emergencies)
 mode2_heavies    = {d: 0 for d in DIRECTIONS}  # {lane: int} heavy vehicles
@@ -304,7 +313,7 @@ def _read_mjpeg_url(direction, src):
             'Connection': 'keep-alive'
         }
         req = urllib.request.Request(src, headers=headers)
-        stream = urllib.request.urlopen(req, timeout=10)
+        stream = urllib.request.urlopen(req, timeout=5)
         while True:
             # Stop if source changed
             src_now = mode2_cam_config.get(direction, '').strip()
@@ -411,10 +420,20 @@ def mode2_capture_loop(direction):
                         break # Break to outer loop for retry
 
                 mode2_raw_frames[direction] = frame
-                # The annotated frame is now updated by a background detection worker
-                # to keep this capture loop running at full speed.
+                
+                # Fast ROI overlay for raw preview
+                preview_frame = frame.copy()
+                roi_pts = mode2_rois.get(direction)
+                if roi_pts is not None and len(roi_pts) >= 3:
+                    pts = roi_pts.reshape((-1, 1, 2)).astype(np.int32)
+                    cv2.polylines(preview_frame, [pts], isClosed=True, color=(0, 255, 255), thickness=2)
+                    
+                # Encode raw JPEG immediately for low-latency snapshot preview
+                _, raw_buf = cv2.imencode('.jpg', preview_frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
+                mode2_raw_jpeg[direction] = raw_buf.tobytes()
+                # The annotated frame is updated by the detection worker in the background
                 if not isinstance(src_val, str) or _is_mjpeg_url(src_val):
-                    time.sleep(0.001) 
+                    time.sleep(0.001)
                 else:
                     time.sleep(0.03) 
 
@@ -443,31 +462,32 @@ def start_mode2_direction(direction):
     dt.start()
 
 def mode2_detection_worker(direction):
-    """Background detection for Mode 2 to avoid blocking capture threads"""
+    """Background detection for Mode 2 — runs YOLO for counting only, not display."""
     global mode2_frames, mode2_raw_frames, mode2_counts, mode2_scores, mode2_heavies
     print(f"[MODE2] Detection worker started for {direction}", flush=True)
     while True:
         try:
             frame = mode2_raw_frames.get(direction)
             if frame is not None:
-                # Run detection on the latest raw frame
+                # Run detection overlay (used for annotated view and counting)
                 mode2_frames[direction] = _apply_detection_overlay(direction, frame)
             else:
                 time.sleep(0.1)
-            time.sleep(0.01) # Small rest
+            time.sleep(0.05) # Detection runs at ~20fps max — no need to match camera fps
         except Exception as e:
             print(f"[MODE2] Det error for {direction}: {e}")
             time.sleep(1)
 
 def generate_mode2_stream(direction):
-    """MJPEG generator for Mode 2 directions"""
+    """MJPEG generator for Mode 2 directions - keeps connection alive with blank frames."""
+    blank = mode2_blank_frames.get(direction, BLANK_FRAME_BYTES)
     last_frame_bytes = None
     while True:
-        frame = mode2_frames.get(direction)
-        if frame and frame != last_frame_bytes:
+        frame = mode2_frames.get(direction) or blank
+        if frame != last_frame_bytes:
             yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
             last_frame_bytes = frame
-        time.sleep(0.01) # Poll for new frames at 100Hz
+        time.sleep(0.033) # ~30 fps max
 
 # --- Dynamic Settings Configurations ---
 def load_rois():
@@ -773,7 +793,11 @@ def mode2_traffic_control_loop():
 @app.route('/')
 def index():
     global connection_status
-    return render_template('index.html', status=connection_status)
+    resp = make_response(render_template('index.html', status=connection_status))
+    resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    resp.headers['Pragma'] = 'no-cache'
+    resp.headers['Expires'] = '0'
+    return resp
 
 @app.route('/traffic_control')
 def traffic_control():
@@ -1213,12 +1237,47 @@ def video_feed():
 # --- MODE 2 ROUTES ---
 @app.route('/video_feed/mode2/<direction>')
 def video_feed_mode2(direction):
-    """Per-direction MJPEG stream for Mode 2"""
+    """Per-direction MJPEG stream for Mode 2 (kept for compatibility)"""
     if direction not in DIRECTIONS:
         return jsonify({'error': 'Invalid direction'}), 404
     return Response(generate_mode2_stream(direction),
                     mimetype='multipart/x-mixed-replace; boundary=frame',
                     headers={'Access-Control-Allow-Origin': '*'})
+
+@app.route('/snapshot/mode2/<direction>')
+def snapshot_mode2(direction):
+    """Single JPEG snapshot — serves raw frame for zero-latency preview."""
+    if direction not in DIRECTIONS:
+        return jsonify({'error': 'Invalid direction'}), 404
+    # Prefer raw JPEG (no YOLO latency) for smooth preview
+    frame = mode2_raw_jpeg.get(direction) or mode2_frames.get(direction) or mode2_blank_frames.get(direction, BLANK_FRAME_BYTES)
+    return Response(
+        frame,
+        mimetype='image/jpeg',
+        headers={
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0',
+            'Access-Control-Allow-Origin': '*'
+        }
+    )
+
+@app.route('/snapshot/annotated/mode2/<direction>')
+def snapshot_annotated_mode2(direction):
+    """Single JPEG snapshot with YOLO detection overlay (may lag if model is slow)."""
+    if direction not in DIRECTIONS:
+        return jsonify({'error': 'Invalid direction'}), 404
+    frame = mode2_frames.get(direction) or mode2_blank_frames.get(direction, BLANK_FRAME_BYTES)
+    return Response(
+        frame,
+        mimetype='image/jpeg',
+        headers={
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0',
+            'Access-Control-Allow-Origin': '*'
+        }
+    )
 
 @app.route('/api/mode2_config', methods=['GET', 'POST'])
 def mode2_config_api():

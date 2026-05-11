@@ -551,6 +551,13 @@
         .m2-roi-btn.clr    { border-color: rgba(240,48,80,.4); color: var(--red); }
         .m2-roi-btn.clr:hover  { background: rgba(240,48,80,.12); }
 
+        /* Fullscreen ROI drawing mode */
+        .m2-dir-card.drawing-mode {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            z-index: 9999; border: none;
+            background: #000;
+        }
+
         /* M2 ROI canvas overlay */
         .m2-card-preview canvas.m2-roi-canvas {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
@@ -1057,7 +1064,7 @@
                         </div>
                         <div class="m2-src-hint">Webcam index · HTTP MJPEG URL · RTSP · Video file path</div>
                         <div class="m2-card-preview">
-                            <img id="m2-prev-North" src="/video_feed/mode2/North" alt="North Preview">
+                            <canvas id="m2-prev-North" data-dir="North" class="m2-snap-canvas"></canvas>
                             <canvas class="m2-roi-canvas" id="m2-roi-canvas-North" data-dir="North"></canvas>
                             <div class="m2-prev-badge" id="m2-prev-badge-North">PREVIEW</div>
                         </div>
@@ -1081,7 +1088,7 @@
                         </div>
                         <div class="m2-src-hint">Webcam index · HTTP MJPEG URL · RTSP · Video file path</div>
                         <div class="m2-card-preview">
-                            <img id="m2-prev-West" src="/video_feed/mode2/West" alt="West Preview">
+                            <canvas id="m2-prev-West" data-dir="West" class="m2-snap-canvas"></canvas>
                             <canvas class="m2-roi-canvas" id="m2-roi-canvas-West" data-dir="West"></canvas>
                             <div class="m2-prev-badge" id="m2-prev-badge-West">PREVIEW</div>
                         </div>
@@ -1105,7 +1112,7 @@
                         </div>
                         <div class="m2-src-hint">Webcam index · HTTP MJPEG URL · RTSP · Video file path</div>
                         <div class="m2-card-preview">
-                            <img id="m2-prev-South" src="/video_feed/mode2/South" alt="South Preview">
+                            <canvas id="m2-prev-South" data-dir="South" class="m2-snap-canvas"></canvas>
                             <canvas class="m2-roi-canvas" id="m2-roi-canvas-South" data-dir="South"></canvas>
                             <div class="m2-prev-badge" id="m2-prev-badge-South">PREVIEW</div>
                         </div>
@@ -1129,7 +1136,7 @@
                         </div>
                         <div class="m2-src-hint">Webcam index · HTTP MJPEG URL · RTSP · Video file path</div>
                         <div class="m2-card-preview">
-                            <img id="m2-prev-East" src="/video_feed/mode2/East" alt="East Preview">
+                            <canvas id="m2-prev-East" data-dir="East" class="m2-snap-canvas"></canvas>
                             <canvas class="m2-roi-canvas" id="m2-roi-canvas-East" data-dir="East"></canvas>
                             <div class="m2-prev-badge" id="m2-prev-badge-East">PREVIEW</div>
                         </div>
@@ -1153,7 +1160,7 @@
                 <!-- NORTH tile -->
                 <div class="m2-feed-tile" id="m2-tile-North">
                     <div class="m2-feed-video">
-                        <img id="m2-main-North" src="/video_feed/mode2/North" alt="North Feed">
+                        <canvas id="m2-main-North" data-dir="North" class="m2-snap-canvas"></canvas>
                         <div class="m2-feed-overlay">
                             <span class="vid-badge live">LIVE</span>
                             <span class="vid-badge" style="border-color:var(--cyan);color:var(--cyan);">NORTH</span>
@@ -1185,7 +1192,7 @@
                 <!-- WEST tile -->
                 <div class="m2-feed-tile" id="m2-tile-West">
                     <div class="m2-feed-video">
-                        <img id="m2-main-West" src="/video_feed/mode2/West" alt="West Feed">
+                        <canvas id="m2-main-West" data-dir="West" class="m2-snap-canvas"></canvas>
                         <div class="m2-feed-overlay">
                             <span class="vid-badge live">LIVE</span>
                             <span class="vid-badge" style="border-color:var(--cyan);color:var(--cyan);">WEST</span>
@@ -1217,7 +1224,7 @@
                 <!-- SOUTH tile -->
                 <div class="m2-feed-tile" id="m2-tile-South">
                     <div class="m2-feed-video">
-                        <img id="m2-main-South" src="/video_feed/mode2/South" alt="South Feed">
+                        <canvas id="m2-main-South" data-dir="South" class="m2-snap-canvas"></canvas>
                         <div class="m2-feed-overlay">
                             <span class="vid-badge live">LIVE</span>
                             <span class="vid-badge" style="border-color:var(--cyan);color:var(--cyan);">SOUTH</span>
@@ -1249,7 +1256,7 @@
                 <!-- EAST tile -->
                 <div class="m2-feed-tile" id="m2-tile-East">
                     <div class="m2-feed-video">
-                        <img id="m2-main-East" src="/video_feed/mode2/East" alt="East Feed">
+                        <canvas id="m2-main-East" data-dir="East" class="m2-snap-canvas"></canvas>
                         <div class="m2-feed-overlay">
                             <span class="vid-badge live">LIVE</span>
                             <span class="vid-badge" style="border-color:var(--cyan);color:var(--cyan);">EAST</span>
