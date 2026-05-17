@@ -6,13 +6,14 @@
    ============================================================ */
 
 // ─── STATE ──────────────────────────────────────────────────
+const DIRECTIONS = ['North', 'South', 'East', 'West'];
 const DEFAULT_STATE = {
     fsBase: 13,
     windows: {
         'win-dashboard': { x: 30, y: 30, w: 420, h: 400, open: true, pinned: false },
         'win-connection': { x: 480, y: 30, w: 360, h: 500, open: false, pinned: false },
         'win-roi': { x: 100, y: 80, w: 560, h: 440, open: false, pinned: false },
-        'win-tl': { x: 480, y: 80, w: 360, h: 500, open: false, pinned: false },
+        'win-tl': { x: 480, y: 80, w: 400, h: 500, open: false, pinned: false },
         'win-live': { x: 200, y: 200, w: 500, h: 360, open: false, pinned: false },
     },
     config: {
@@ -26,7 +27,12 @@ const DEFAULT_STATE = {
         mode2Links: ''
     },
 
-    tlIds: { North: '', South: '', East: '', West: '' },
+    tlIds: { 
+        North: { id: '', api: '' }, 
+        South: { id: '', api: '' }, 
+        East: { id: '', api: '' }, 
+        West: { id: '', api: '' } 
+    },
     rois: {},
     localControlEnabled: false,
     localTLStates: { North: 'red', South: 'red', East: 'red', West: 'red' },
@@ -52,6 +58,13 @@ Object.keys(DEFAULT_STATE.windows).forEach(k => {
 });
 if (!appState.config) appState.config = { ...DEFAULT_STATE.config };
 if (!appState.tlIds) appState.tlIds = { ...DEFAULT_STATE.tlIds };
+// Migrate old string-based tlIds to object-based if needed
+['North', 'South', 'East', 'West'].forEach(l => {
+    if (typeof appState.tlIds[l] === 'string') {
+        appState.tlIds[l] = { id: appState.tlIds[l], api: '' };
+    }
+});
+
 if (!appState.rois) appState.rois = {};
 if (typeof appState.localControlEnabled !== 'boolean') appState.localControlEnabled = false;
 if (!appState.localTLStates) appState.localTLStates = { ...DEFAULT_STATE.localTLStates };
@@ -157,7 +170,6 @@ function applyWindowState(winId) {
     el.style.width = s.w + 'px';
     el.style.height = s.h + 'px';
     el.classList.toggle('pinned', !!s.pinned);
-    // pin button
     const pinBtn = el.querySelector('.pin-btn');
     if (pinBtn) pinBtn.classList.toggle('active', !!s.pinned);
 }
@@ -189,7 +201,6 @@ function bringToFront(winId) {
     if (el) el.style.zIndex = ++zCounter;
 }
 
-// Constrain position
 function constrainPos(x, y, w, h) {
     const b = getCanvasBounds();
     return {
@@ -198,7 +209,6 @@ function constrainPos(x, y, w, h) {
     };
 }
 
-// Dragging
 function initDraggable(el) {
     const winId = el.id;
     const titlebar = el.querySelector('.fwin-titlebar');
@@ -231,7 +241,6 @@ function initDraggable(el) {
     });
 }
 
-// Resizing
 function initResizable(el) {
     const winId = el.id;
     const handle = el.querySelector('.fwin-resize');
@@ -264,7 +273,6 @@ function initResizable(el) {
     });
 }
 
-// Close and pin buttons
 function initWindowControls(el) {
     const winId = el.id;
     el.querySelector('.close-btn').addEventListener('click', () => closeWindow(winId));
@@ -280,7 +288,6 @@ function initWindowControls(el) {
     el.addEventListener('mousedown', () => bringToFront(winId));
 }
 
-// Initialize all windows
 Object.keys(appState.windows).forEach(winId => {
     const el = document.getElementById(winId);
     if (!el) return;
@@ -295,7 +302,8 @@ const SB_MAP = {
     'sb-dash': 'win-dashboard',
     'sb-conn': 'win-connection',
     'sb-roi': 'win-roi',
-    'sb-tl': 'win-tl'
+    'sb-tl': 'win-tl',
+    'sb-live': 'win-live'
 };
 
 function updateSidebarBtns() {
@@ -311,6 +319,21 @@ Object.entries(SB_MAP).forEach(([btnId, winId]) => {
 });
 
 updateSidebarBtns();
+
+const sbMode2 = document.getElementById('sb-mode2');
+if (sbMode2) {
+    sbMode2.addEventListener('click', () => {
+        const m2Panel = document.getElementById('mode2-panel');
+        const canvas = document.getElementById('canvas');
+        const isActive = m2Panel.classList.toggle('active');
+        canvas.style.display = isActive ? 'none' : 'block';
+        sbMode2.classList.toggle('active', isActive);
+        if (isActive) {
+            // Close all windows when entering Mode 2
+            Object.keys(appState.windows).forEach(winId => closeWindow(winId));
+        }
+    });
+}
 
 // ─── CONFIG FORM ─────────────────────────────────────────────
 function loadConfigToForm() {
@@ -343,6 +366,7 @@ function saveConfigFromForm() {
     saveState();
     updateTopbarFromConfig();
     updateApiEndpoints();
+    applyMode2Links(); // Auto-map links on save
 }
 
 function updateTopbarFromConfig() {
@@ -361,33 +385,28 @@ function updateApiEndpoints() {
 }
 
 function parseMode2Links(text) {
-    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    const items = text.split(/[\n,]+/).map(l => l.trim()).filter(Boolean);
     const mapping = { North: '', South: '', East: '', West: '' };
     const order = ['North', 'South', 'East', 'West'];
     let idx = 0;
-    lines.forEach(line => {
-        const lc = line.trim();
-        if (!lc) return;
-        const colon = lc.indexOf(':');
-        const eq = lc.indexOf('=');
-        let key, url;
-        if (colon > 0 || eq > 0) {
-            const splitAt = colon > 0 ? colon : eq;
-            key = lc.slice(0, splitAt).trim();
-            url = lc.slice(splitAt + 1).trim();
+
+    items.forEach(item => {
+        // Match "Direction: URL" or "Direction=URL"
+        const match = item.match(/^(north|south|east|west)[:=]\s*(.*)$/i);
+        if (match) {
+            const lane = match[1].charAt(0).toUpperCase() + match[1].slice(1).toLowerCase();
+            const url = match[2].trim();
+            if (url) mapping[lane] = url;
         } else {
-            key = '';
-            url = lc;
-        }
-        if (!url) return;
-        if (/^north$/i.test(key)) mapping.North = url;
-        else if (/^south$/i.test(key)) mapping.South = url;
-        else if (/^east$/i.test(key)) mapping.East = url;
-        else if (/^west$/i.test(key)) mapping.West = url;
-        else if (/^https?:\/\//i.test(url) || /^rtsp:/i.test(url) || /^\d+$/.test(url)) {
-            if (idx < order.length) {
-                mapping[order[idx]] = url;
-                idx += 1;
+            // No label, use next available direction in N, S, E, W order
+            // Check if it's a URL or a device index
+            if (/^https?:\/\//i.test(item) || /^rtsp:/i.test(item) || /^\d+$/.test(item)) {
+                // Find next empty slot
+                while (idx < order.length && mapping[order[idx]]) idx++;
+                if (idx < order.length) {
+                    mapping[order[idx]] = item;
+                    idx++;
+                }
             }
         }
     });
@@ -399,12 +418,36 @@ function applyMode2Links() {
     if (!txt) return;
     const mapping = parseMode2Links(txt.value);
     appState.mode2Sources = mapping;
+    
+    const postData = {};
     ['North', 'South', 'East', 'West'].forEach(lane => {
-        const inpt = document.getElementById('mode2-' + lane.toLowerCase());
-        if (inpt) inpt.value = mapping[lane];
+        const val = mapping[lane];
+        // 1. Update Connection Window inputs
+        const inpt1 = document.getElementById('mode2-' + lane.toLowerCase());
+        if (inpt1) inpt1.value = val;
+        
+        // 2. Update Mode 2 Panel inputs
+        const inpt2 = document.getElementById('m2-src-' + lane);
+        if (inpt2) inpt2.value = val;
+        
+        postData['src_' + lane.toLowerCase()] = val;
     });
+    
     saveState();
-    toast('Mode2 links mapped', 'green');
+
+    // Sync with server
+    fetch('/api/mode2_config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(postData)
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.status === 'success') {
+            // Success toast is optional here if called from saveConfigFromForm
+        }
+    })
+    .catch(err => console.error('Mode2 sync failed:', err));
 }
 
 function loadMode2SourcesToInputs() {
@@ -416,7 +459,6 @@ function loadMode2SourcesToInputs() {
 }
 
 function updateLiveFeedSrc() {
-    console.log("[DEBUG] Initializing Live Feed UI sources");
     const liveImg = document.getElementById('live-img');
     const roiImg = document.getElementById('roi-img');
     const timestamp = new Date().getTime();
@@ -444,11 +486,6 @@ function handleConnectionCommand(actionName) {
         })
     }).then(r => r.json()).then(data => {
         toast(data.message || 'Success', data.status === 'success' ? 'green' : 'red');
-        if (data.status === 'success') {
-            if (actionName === 'toggle_connect') {
-                // Backend handles the flip, we just wait for poll to update visuals
-            }
-        }
     }).catch(() => {
         toast('Network Error', 'red');
     });
@@ -464,9 +501,10 @@ if (startBtn) {
 if (stopBtn) {
     stopBtn.addEventListener('click', () => handleConnectionCommand('stop_system'));
 }
-const mode2ApplyBtn = document.getElementById('btn-apply-mode2-links');
-if (mode2ApplyBtn) {
-    mode2ApplyBtn.addEventListener('click', () => {
+// Auto-apply logic for Mode 2 links
+const mode2LinksTextArea = document.getElementById('cfg-mode2-links');
+if (mode2LinksTextArea) {
+    mode2LinksTextArea.addEventListener('input', () => {
         applyMode2Links();
         saveConfigFromForm();
     });
@@ -514,14 +552,13 @@ if (localToggleBtn) {
     localToggleBtn.addEventListener('click', () => setLocalControlEnabled(!appState.localControlEnabled));
 }
 
-// Load external Config from DB on Init
 function loadExternalConfig() {
     fetch('/api/config')
         .then(r => r.json())
         .then(data => {
-            appState.config.controllerHost = data.controller_host || data.control_host || data.thorulf_host || '';
-            appState.config.controllerPort = data.controller_port || data.control_port || data.thorulf_port || '';
-            appState.config.timeout = data.controller_timeout || data.control_timeout || data.thorulf_timeout || '';
+            appState.config.controllerHost = data.controller_host || '';
+            appState.config.controllerPort = data.controller_port || '';
+            appState.config.timeout = data.controller_timeout || '';
             appState.config.yolo = data.yolo_model || '';
             appState.config.cycleTimer = data.cycle_timer || 30;
             appState.config.flaskHost = data.flask_host || '0.0.0.0';
@@ -537,75 +574,76 @@ loadExternalConfig();
 // ─── TRAFFIC LIGHT MAPPING ───────────────────────────────────
 function loadTLForm() {
     ['North', 'South', 'East', 'West'].forEach(lane => {
-        const el = document.getElementById('tl-' + lane.toLowerCase());
-        if (el) el.value = appState.tlIds[lane] || '';
+        const apiInp = document.getElementById('api-' + lane.toLowerCase());
+        const entry = appState.tlIds[lane] || { api: '' };
+        if (apiInp) apiInp.value = entry.api || '';
     });
 }
 
 document.getElementById('btn-update-tl').addEventListener('click', () => {
     ['North', 'South', 'East', 'West'].forEach(lane => {
-        const el = document.getElementById('tl-' + lane.toLowerCase());
-        appState.tlIds[lane] = el ? el.value.trim() : '';
-        const idEl = document.getElementById('tl-id-' + lane);
-        if (idEl) idEl.textContent = appState.tlIds[lane] ? '#' + appState.tlIds[lane] : '--';
+        const apiEl = document.getElementById('api-' + lane.toLowerCase());
+        appState.tlIds[lane] = {
+            id: null,
+            api: apiEl ? apiEl.value.trim() : ''
+        };
     });
     saveState();
 
-    // POST to backend for validation and storage
     fetch('/tl_panel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            tl_north: appState.tlIds.North || null,
-            tl_south: appState.tlIds.South || null,
-            tl_east: appState.tlIds.East || null,
-            tl_west: appState.tlIds.West || null
+            api_north: appState.tlIds.North.api,
+            api_south: appState.tlIds.South.api,
+            api_east:  appState.tlIds.East.api,
+            api_west:  appState.tlIds.West.api
         })
     }).then(r => r.json()).then(data => {
         toast(data.message || 'Bindings updated', data.status === 'success' ? 'green' : 'red');
     }).catch(() => toast('Network Error', 'red'));
 });
 
-// Manual TL Test Helper for R/Y/G buttons
 window.testTL = function (lane, state) {
-    const actorId = document.getElementById('tl-' + lane.toLowerCase()).value.trim();
-    const connStatus = getConnectionStatus();
-    const isConnected = connStatus === 'CONNECTED';
+    const apiBase = document.getElementById('api-' + lane.toLowerCase()).value.trim();
 
-    if (appState.localControlEnabled || !isConnected) {
+    if (appState.localControlEnabled) {
         applyLocalTLState(lane, state);
         toast(`Local override ${lane} -> ${state.toUpperCase()}`, 'green');
         return;
     }
 
-    if (!actorId) {
-        toast("Enter an Actor ID first", "red");
+    if (!apiBase) {
+        toast("Enter an API URL first", "red");
         return;
     }
 
-    toast(`Testing ${lane}:${actorId} -> ${state.toUpperCase()}...`, 'cyan');
-    fetch('/api/tl_test', {
+    toast(`Proxy Test: ${lane} -> ${state.toUpperCase()}`, 'cyan');
+    
+    fetch('/api/tl_proxy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ actor_id: actorId, state: state })
-    }).then(r => r.json()).then(data => {
-        toast(data.message, data.status === 'success' ? 'green' : 'red');
-    }).catch(() => toast("Test Request Failed", "red"));
+        body: JSON.stringify({ url: apiBase, state: state })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if(data.status === 'success') toast(`API Success: ${lane} set to ${state.toUpperCase()}`, 'green');
+        else toast(`API Error: ${data.message}`, 'red');
+    })
+    .catch(err => toast(`Proxy Error: ${err.message}`, 'red'));
 };
 
 // ─── UTILS ───────────────────────────────────────────────────
-function getContainedImageBounds(img) {
-    if (!img || !img.naturalWidth || !img.clientWidth) return null;
-    const ratio = img.naturalWidth / img.naturalHeight;
-    let w = img.clientWidth;
-    let h = img.clientHeight;
-    if (w / h > ratio) {
-        w = h * ratio;
-    } else {
-        h = w / ratio;
-    }
-    const x = (img.clientWidth - w) / 2;
-    const y = (img.clientHeight - h) / 2;
+function getContainedImageBounds(el) {
+    const natW = el.naturalWidth || el.width;
+    const natH = el.naturalHeight || el.height;
+    if (!el || !natW || !el.clientWidth) return null;
+    const ratio = natW / natH;
+    let w = el.clientWidth;
+    let h = el.clientHeight;
+    if (w / h > ratio) { w = h * ratio; } else { h = w / ratio; }
+    const x = (el.clientWidth - w) / 2;
+    const y = (el.clientHeight - h) / 2;
     return { x, y, w, h };
 }
 
@@ -619,11 +657,8 @@ let roiPoints = [];
 function resizeROICanvas() {
     const img = document.getElementById('roi-img');
     if (!roiCanvas || !img) return;
-
-    // Use clientWidth/Height of the container or the image's displayed size
     const w = img.clientWidth || img.width;
     const h = img.clientHeight || img.height;
-
     if (w > 0 && h > 0) {
         roiCanvas.width = w;
         roiCanvas.height = h;
@@ -634,7 +669,6 @@ function resizeROICanvas() {
 const roiImg = document.getElementById('roi-img');
 if (roiImg) {
     roiImg.addEventListener('load', () => resizeROICanvas());
-    // Also poll slightly because offsetWidth can be 0 if window is display:none when it loads
     setInterval(() => {
         if (roiCanvas && roiCanvas.width !== roiImg.clientWidth && roiImg.clientWidth > 0) {
             resizeROICanvas();
@@ -642,23 +676,18 @@ if (roiImg) {
     }, 1000);
 }
 window.addEventListener('resize', resizeROICanvas);
-setTimeout(resizeROICanvas, 500);
 
 function drawROIScene() {
     if (!roiCtx) return;
     roiCtx.clearRect(0, 0, roiCanvas.width, roiCanvas.height);
-
     const img = document.getElementById('roi-img');
     const rect = getContainedImageBounds(img);
     if (!rect) return;
 
-    // Draw saved ROIs
     Object.entries(appState.rois).forEach(([lane, pts_nat]) => {
         if (!pts_nat || pts_nat.length < 4) return;
-
         const sx = rect.w / (img.naturalWidth || 1);
         const sy = rect.h / (img.naturalHeight || 1);
-
         roiCtx.beginPath();
         roiCtx.moveTo(rect.x + pts_nat[0][0] * sx, rect.y + pts_nat[0][1] * sy);
         for (let i = 1; i < pts_nat.length; i++) {
@@ -670,16 +699,11 @@ function drawROIScene() {
         roiCtx.stroke();
         roiCtx.fillStyle = 'rgba(0,212,245,0.15)';
         roiCtx.fill();
-
         roiCtx.fillStyle = '#00d4f5';
         roiCtx.font = 'bold 13px "Share Tech Mono"';
-        roiCtx.shadowBlur = 4;
-        roiCtx.shadowColor = 'rgba(0,0,0,0.8)';
         roiCtx.fillText(lane.toUpperCase(), rect.x + pts_nat[0][0] * sx + 5, rect.y + pts_nat[0][1] * sy - 8);
-        roiCtx.shadowBlur = 0;
     });
 
-    // Draw current points
     roiPoints.forEach((pt, idx) => {
         roiCtx.beginPath();
         roiCtx.arc(pt.x, pt.y, 5, 0, Math.PI * 2);
@@ -688,8 +712,6 @@ function drawROIScene() {
         roiCtx.strokeStyle = '#fff';
         roiCtx.lineWidth = 1.5;
         roiCtx.stroke();
-        roiCtx.fillStyle = '#fff';
-        roiCtx.font = '10px "Share Tech Mono"';
         roiCtx.fillText(idx + 1, pt.x + 8, pt.y + 9);
     });
 
@@ -712,14 +734,9 @@ if (roiCanvas) {
         const y = (e.clientY - rect.top);
         roiPoints.push({ x: Math.round(x), y: Math.round(y) });
         drawROIScene();
-
         const remaining = 4 - roiPoints.length;
         const statusEl = document.getElementById('roi-status');
-        if (statusEl) {
-            statusEl.textContent = remaining > 0
-                ? remaining + ' POINT(S) REMAINING...'
-                : 'ROI SHAPE COMPLETE -- CLICK SAVE ROI';
-        }
+        if (statusEl) statusEl.textContent = remaining > 0 ? remaining + ' POINT(S) REMAINING...' : 'ROI SHAPE COMPLETE -- CLICK SAVE ROI';
     });
 }
 
@@ -731,29 +748,19 @@ document.getElementById('roi-clear-btn').addEventListener('click', () => {
 });
 
 document.getElementById('roi-save-btn').addEventListener('click', () => {
-    if (roiPoints.length !== 4) {
-        toast('Exactly 4 points required', 'red');
-        return;
-    }
+    if (roiPoints.length !== 4) { toast('Exactly 4 points required', 'red'); return; }
     const lane = document.getElementById('roi-lane').value;
     const img = document.getElementById('roi-img');
     const rect = getContainedImageBounds(img);
     if (!rect) return;
-
-    // Scale from display point inside image bounds to natural image pixels
     const pts_nat = roiPoints.map(p => {
         const x_rel = p.x - rect.x;
         const y_rel = p.y - rect.y;
-        return [
-            Math.round(x_rel * (img.naturalWidth / rect.w)),
-            Math.round(y_rel * (img.naturalHeight / rect.h))
-        ];
+        return [ Math.round(x_rel * (img.naturalWidth / rect.w)), Math.round(y_rel * (img.naturalHeight / rect.h)) ];
     });
-
     appState.rois[lane] = pts_nat;
     roiPoints = [];
     drawROIScene();
-
     fetch('/roi_panel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -766,96 +773,547 @@ document.getElementById('roi-save-btn').addEventListener('click', () => {
 document.getElementById('roi-save-set-btn').addEventListener('click', () => {
     const name = document.getElementById('roi-set-name').value.trim();
     if (!name) { toast("Enter a set name", "red"); return; }
-
-    const serializable = {};
-    for (let l in appState.rois) {
-        serializable[l] = appState.rois[l];
-    }
-
-    fetch('/api/roi_sets', {
+    fetch('/roi_panel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: name, config: serializable })
+        body: JSON.stringify({ action: 'save_set', name: name, rois: appState.rois })
     }).then(r => r.json()).then(data => {
         toast(data.message, data.status === 'success' ? 'green' : 'red');
-        refreshRoiSetsList();
+        loadROISets();
     });
 });
 
-function refreshRoiSetsList() {
-    fetch('/api/roi_sets')
+function loadROISets() {
+    fetch('/roi_panel?action=list_sets')
         .then(r => r.json())
         .then(data => {
             const list = document.getElementById('roi-sets-list');
-            list.innerHTML = '';
-            if (!data.sets || data.sets.length === 0) {
-                list.innerHTML = '<span class="form-hint">No saved sets...</span>';
-                return;
-            }
-            data.sets.forEach(s => {
-                const item = document.createElement('div');
-                item.className = 'api-row';
-                item.style.cursor = 'pointer';
-                item.style.marginBottom = '4px';
-                item.textContent = s;
-                item.onclick = () => {
-                    document.getElementById('roi-set-name').value = s;
-                };
-                list.appendChild(item);
-            });
+            if (!list) return;
+            if (!data.sets || !data.sets.length) { list.innerHTML = '<span class="form-hint">No saved sets...</span>'; return; }
+            list.innerHTML = data.sets.map(s => `<div class="status-row" style="cursor:pointer;" onclick="selectROISet('${s}')"><span class="status-key">${s}</span></div>`).join('');
         });
 }
 
+window.selectROISet = function(name) {
+    document.getElementById('roi-set-name').value = name;
+    toast(`Selected set: ${name}`, 'cyan');
+};
+
 document.getElementById('roi-load-btn').addEventListener('click', () => {
-    const name = document.getElementById('roi-set-title') || document.getElementById('roi-set-name').value;
-    if (!name) return;
-    fetch(`/api/roi_sets/${name}`)
+    const name = document.getElementById('roi-set-name').value.trim();
+    if (!name) { toast("Select/Enter a set name", "red"); return; }
+    fetch(`/roi_panel?action=load_set&name=${name}`)
         .then(r => r.json())
         .then(data => {
             if (data.status === 'success') {
-                appState.rois = {};
-                for (let l in data.rois) appState.rois[l] = data.rois[l];
+                appState.rois = data.rois;
+                saveState();
                 drawROIScene();
-                toast(data.message, 'green');
-            } else {
-                toast(data.message, 'red');
-            }
+                toast(`Set "${name}" loaded`, 'green');
+            } else toast(data.message, 'red');
         });
 });
 
-// ─── TRAFFIC LIGHTS ──────────────────────────────────────────
-document.getElementById('btn-update-tl').addEventListener('click', () => {
-    const data = {
-        tl_north: document.getElementById('tl-north').value,
-        tl_south: document.getElementById('tl-south').value,
-        tl_east: document.getElementById('tl-east').value,
-        tl_west: document.getElementById('tl-west').value
-    };
+loadROISets();
 
-    fetch('/tl_panel', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
-    }).then(r => r.json()).then(res => {
-        // Show actual server message in toast (e.g. invalid actor ID warning)
-        const toastMsg = res.message || (res.status === 'success' ? 'TL Bindings Updated' : 'Update Failed');
-        toast(toastMsg, res.status === 'success' ? 'green' : 'red');
+// ─── STATS POLLING ──────────────────────────────────────────
+let pollInterval = null;
+function pollStats() {
+    fetch('/api/system')
+        .then(r => r.json())
+        .then(data => {
+            const cs = document.getElementById('tb-control-status');
+            const ss = document.getElementById('tb-system-status');
+            const ds = document.getElementById('tb-detect-status');
+            const dControl = document.getElementById('dot-control');
+            const sControl = document.getElementById('stat-control');
+            
+            if (cs) {
+                cs.textContent = data.connection_status.toUpperCase();
+                cs.className = 'tb-stat-value ' + (data.connection_status === 'Connected' ? 'green' : 'red');
+            }
+            if (dControl) dControl.className = 'dot ' + (data.connection_status === 'Connected' ? 'green' : 'red');
+            if (sControl) sControl.textContent = data.connection_status.toUpperCase();
 
-        if (res.status === 'success') {
-            appState.tlIds.North = data.tl_north;
-            appState.tlIds.South = data.tl_south;
-            appState.tlIds.East = data.tl_east;
-            appState.tlIds.West = data.tl_west;
-            saveState();
-            // Update UI IDs
+            if (ss) {
+                ss.textContent = data.system_status.toUpperCase();
+                ss.className = 'tb-stat-value ' + (data.system_status === 'Running' ? 'green' : 'red');
+            }
+
+            const isRunning = data.system_status === 'Running';
+            const toggleBtn = document.getElementById('btn-toggle-system');
+            if (toggleBtn) {
+                toggleBtn.textContent = isRunning ? '■ STOP SYSTEM' : '▶ START SYSTEM';
+                toggleBtn.className = 'btn ' + (isRunning ? 'btn-red' : 'btn-green');
+            }
+            const m2ToggleBtn = document.getElementById('m2-btn-toggle');
+            if (m2ToggleBtn) {
+                m2ToggleBtn.textContent = isRunning ? '■ STOP' : '▶ START';
+                m2ToggleBtn.className = 'm2-sys-btn ' + (isRunning ? 'stop' : 'start');
+            }
+
+            const dSys = document.getElementById('dot-detect');
+            const sSys = document.getElementById('stat-detect');
+            if (dSys) dSys.className = 'dot ' + (isRunning ? 'green' : 'red');
+            if (sSys) sSys.textContent = isRunning ? 'RUNNING' : 'STOPPED';
+
+            if (ds) {
+                ds.textContent = data.detection_active ? 'ACTIVE' : 'INACTIVE';
+                ds.style.color = data.detection_active ? 'var(--green)' : 'var(--text-dim)';
+            }
+
+            const ct = document.getElementById('tb-cycle-timer');
+            if (ct) ct.textContent = data.timer.toFixed(1) + 's';
+
+            const ph = document.getElementById('tb-phase-lane');
+            const ph_l = document.getElementById('ph-lane');
+            const ph_t = document.getElementById('ph-timer');
+            const ph_b = document.getElementById('ph-bar');
+            if (ph) ph.textContent = data.current_lane.toUpperCase();
+            if (ph_l) ph_l.textContent = data.current_lane.toUpperCase();
+            if (ph_t) ph_t.textContent = data.timer.toFixed(1) + 's';
+            if (ph_b) {
+                const perc = Math.min(100, (data.timer / (data.max_timer || 30)) * 100);
+                ph_b.style.width = perc + '%';
+            }
+
+            document.getElementById('tb-total-veh').textContent = data.total_vehicles || 0;
+
+            if (data.logs && data.logs.length > 0) {
+                data.logs.forEach(l => addLog(l.level, l.msg));
+            }
+        });
+
+    fetch('/api/lane_counts')
+        .then(r => r.json())
+        .then(data => {
+            const counts = data.counts || data;  // support both flat and nested
+            const greenLane = data.green_lane || '';
+            const timer = data.timer || 0;
+            const cycleDur = data.cycle_duration || 30;
+
+            // Update phase lane + timer from lane_counts (more accurate)
+            const ph = document.getElementById('tb-phase-lane');
+            const ph_l = document.getElementById('ph-lane');
+            const ph_t = document.getElementById('ph-timer');
+            const ph_b = document.getElementById('ph-bar');
+            const ct  = document.getElementById('tb-cycle-timer');
+
+            if (ph) ph.textContent = (greenLane || 'NONE').toUpperCase();
+            if (ph_l) ph_l.textContent = (greenLane || 'NONE').toUpperCase();
+            if (ph_t) ph_t.textContent = timer + 's';
+            if (ct) ct.textContent = timer + 's';
+            if (ph_b) ph_b.style.width = Math.min(100, (timer / (cycleDur || 30)) * 100) + '%';
+
+            const m2scores = data.mode2_scores || {};
+            const peds = data.peds || {};
+            let anyPed = false;
+
             ['North', 'South', 'East', 'West'].forEach(l => {
-                const el = document.getElementById(`tl-id-${l}`);
-                if (el) el.textContent = data[`tl_${l.toLowerCase()}`] || '--';
+                const el = document.getElementById('count-' + l);
+                if (el) el.textContent = counts[l] || 0;
+                
+                const card = document.getElementById('lane-card-' + l);
+                if (card) card.classList.toggle('active', l === greenLane);
+
+                // Emergency Indicators (Dashboard & Mode 2)
+                const isEmerg = (m2scores[l] || 0) > 0;
+                const emInd = document.getElementById('emerg-' + l);
+                if (emInd) emInd.classList.toggle('active', isEmerg);
+                
+                const emIndM2 = document.getElementById('m2-emerg-' + l);
+                if (emIndM2) emIndM2.classList.toggle('active', isEmerg);
+                
+                const emIndTL = document.getElementById('tl-emerg-' + l);
+                if (emIndTL) emIndTL.classList.toggle('active', isEmerg);
+
+                if ((peds[l] || 0) > 0) anyPed = true;
             });
+
+            // Global Pedestrian Indicator
+            const pedInd = document.getElementById('ped-indicator');
+            if (pedInd) pedInd.classList.toggle('active', anyPed);
+
+            // TL visual states
+            const tl_states = data.tl_states || {};
+            ['North', 'South', 'East', 'West'].forEach(l => {
+                setTLState(l, tl_states[l] || 'red');
+            });
+
+            // Update total vehicle count
+            const totalEl = document.getElementById('tb-total-veh');
+            if (totalEl) totalEl.textContent = Object.values(counts).reduce((a,b) => a+b, 0);
+
+            // Detection dot & label
+            const dSys = document.getElementById('dot-detect');
+            const sSys = document.getElementById('stat-detect');
+            const dsBar = document.getElementById('tb-detect-status');
+            const isRunning = data.system_started;
+            const isDetecting = data.detect_status === 'ACTIVE';
+            if (dSys) dSys.className = 'dot ' + (isRunning ? 'green' : 'red');
+            if (sSys) sSys.textContent = isRunning ? 'RUNNING' : 'STOPPED';
+            if (dsBar) { dsBar.textContent = data.detect_status || 'INACTIVE'; dsBar.style.color = isDetecting ? 'var(--green)' : 'var(--text-dim)'; }
+
+            // System status topbar
+            const ssSys = document.getElementById('tb-system-status');
+            if (ssSys) {
+                ssSys.textContent = isRunning ? 'RUNNING' : 'STOPPED';
+                ssSys.className = 'tb-stat-value ' + (isRunning ? 'green' : 'red');
+            }
+
+            // Live Feed status row
+            const feedOnline = data.feed_status === 'ONLINE';
+            const dotFeed = document.getElementById('dot-feed');
+            const statFeed = document.getElementById('stat-feed');
+            if (dotFeed) dotFeed.className = 'dot ' + (feedOnline ? 'green' : 'red');
+            if (statFeed) statFeed.textContent = data.feed_status || 'NO SIGNAL';
+
+            // Controller row (distinct from API)
+            const dotCtrl = document.getElementById('dot-ctrl');
+            const statCtrl = document.getElementById('stat-ctrl');
+            const ctrlOk = isRunning && isDetecting;
+            if (dotCtrl) dotCtrl.className = 'dot ' + (ctrlOk ? 'green' : 'yellow');
+            if (statCtrl) statCtrl.textContent = ctrlOk ? 'ACTIVE' : isRunning ? 'STANDBY' : 'OFFLINE';
+        });
+}
+
+function updatePhaseVisuals(counts) {
+    // This is now handled inside the lane_counts fetch above
+    // Kept for legacy compatibility
+}
+
+// Updates the small TL lights in win-tl panel
+function setTLState(lane, state) {
+    ['r', 'y', 'g'].forEach(c => {
+        const el = document.getElementById(`tl-${c}-${lane}`);
+        if (el) {
+            el.classList.remove('lit-red', 'lit-yellow', 'lit-green');
+            if (state === 'red'    && c === 'r') el.classList.add('lit-red');
+            if (state === 'yellow' && c === 'y') el.classList.add('lit-yellow');
+            if (state === 'green'  && c === 'g') el.classList.add('lit-green');
         }
     });
-});
+}
 
+// Updates the Mode 2 realistic traffic light bulbs
+function setM2TLState(lane, state) {
+    ['r', 'y', 'g'].forEach(c => {
+        const el = document.getElementById(`m2-tl-${c}-${lane}`);
+        if (el) {
+            el.classList.remove('lit-red', 'lit-yellow', 'lit-green');
+            if (state === 'red'    && c === 'r') el.classList.add('lit-red');
+            if (state === 'yellow' && c === 'y') el.classList.add('lit-yellow');
+            if (state === 'green'  && c === 'g') el.classList.add('lit-green');
+        }
+    });
+}
+
+// ─── MODE 2 LIVE STATS POLLING ────────────────────────────────
+function pollMode2Stats() {
+    fetch('/api/lane_counts')
+        .then(r => r.json())
+        .then(lc => {
+            const counts    = lc.counts || {};
+            const tl_states = lc.tl_states || {};
+            const greenLane = lc.green_lane || '';
+            const timer     = lc.timer || 0;
+            const cycleDur  = lc.cycle_duration || 30;
+            const m2counts  = lc.mode2_counts || counts;
+
+            // Also pull intensity scores
+            fetch('/api/intensity_scores')
+                .then(r => r.json())
+                .then(sc => {
+                    const scores      = sc.scores || {};
+                    const waits       = sc.wait_times || {};
+                    const greenTimers = sc.green_timers || {};
+                    const maxScore    = Math.max(1, ...Object.values(scores));
+
+                    // Sort lanes by score for priority badges
+                    const ranked = Object.entries(scores)
+                        .sort((a, b) => b[1] - a[1])
+                        .map(([lane], idx) => [lane, idx + 1]);
+                    const rankMap = Object.fromEntries(ranked);
+
+                    DIRECTIONS.forEach(lane => {
+                        const state = tl_states[lane] || 'red';
+                        const cnt   = m2counts[lane] || counts[lane] || 0;
+                        const score = scores[lane] || 0;
+                        const wait  = waits[lane] || 0;
+                        const gtime = greenTimers[lane] || 30;
+                        const rank  = rankMap[lane] || 4;
+                        const loadPct = Math.min(100, (score / maxScore) * 100);
+
+                        // TL bulbs (Mode 2 panel)
+                        setM2TLState(lane, state);
+
+                        // Vehicle count
+                        const cntEl = document.getElementById('m2-cnt-' + lane);
+                        if (cntEl) cntEl.textContent = cnt;
+
+                        // Intensity score label
+                        const intEl = document.getElementById('m2-intensity-' + lane);
+                        if (intEl) intEl.textContent = score > 0 ? `SCR ${score.toFixed(0)}` : '';
+
+                        // Wait time label
+                        const waitEl = document.getElementById('m2-wait-' + lane);
+                        if (waitEl) waitEl.textContent = wait > 0 ? `W ${wait.toFixed(0)}s` : '';
+
+                        // Load bar (intensity as percentage)
+                        const loadEl = document.getElementById('m2-load-' + lane);
+                        if (loadEl) {
+                            loadEl.style.width = loadPct + '%';
+                            loadEl.className = 'm2-tl-load-bar' +
+                                (loadPct > 70 ? ' hi' : loadPct > 40 ? ' med' : '');
+                        }
+
+                        // Countdown bar (timer as percentage of green time)
+                        const cdEl = document.getElementById('m2-cd-' + lane);
+                        if (cdEl) {
+                            const isGreen  = state === 'green';
+                            const isYellow = state === 'yellow';
+                            if (isGreen) {
+                                const pct = Math.min(100, (timer / (gtime || 30)) * 100);
+                                cdEl.style.width = pct + '%';
+                                cdEl.className = 'm2-tl-countdown-bar' +
+                                    (pct < 20 ? ' critical' : pct < 40 ? ' warn' : '');
+                            } else if (isYellow) {
+                                cdEl.style.width = '50%';
+                                cdEl.className = 'm2-tl-countdown-bar warn';
+                            } else {
+                                cdEl.style.width = '0%';
+                                cdEl.className = 'm2-tl-countdown-bar';
+                            }
+                        }
+
+                        // Priority badge
+                        const priEl = document.getElementById('m2-pri-' + lane);
+                        if (priEl) {
+                            priEl.textContent = rank === 1 ? '★ PRIORITY' :
+                                                rank === 2 ? '▲ HIGH' :
+                                                rank === 3 ? '▼ LOW' : '';
+                            priEl.className = `m2-priority-badge rank-${rank}`;
+                        }
+
+                        // Tile glow for active lane
+                        const tileEl = document.getElementById('m2-tile-' + lane);
+                        if (tileEl) {
+                            tileEl.style.boxShadow = state === 'green'
+                                ? '0 0 0 2px rgba(0,232,122,0.6)'
+                                : state === 'yellow'
+                                ? '0 0 0 2px rgba(245,196,0,0.5)'
+                                : '';
+                        }
+                    });
+                });
+        });
+}
+
+setInterval(pollStats, 1000);
+setInterval(pollMode2Stats, 1000);
+pollStats();
+pollMode2Stats();
+
+// ─── SYSTEM START / STOP ─────────────────────────────────────
+function systemAction(action) {
+    fetch('/api/system', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action })
+    })
+    .then(r => r.json())
+    .then(data => {
+        toast(data.message || data.status, data.status === 'success' ? 'green' : 'red');
+        pollStats();
+    })
+    .catch(err => toast('Network Error: ' + err.message, 'red'));
+}
+
+const toggleSystemBtn = document.getElementById('btn-toggle-system');
+if (toggleSystemBtn) {
+    toggleSystemBtn.addEventListener('click', () => {
+        const isRunning = toggleSystemBtn.classList.contains('btn-red');
+        systemAction(isRunning ? 'stop' : 'start');
+    });
+}
+
+// ─── MODE 2 LOGIC ───────────────────────────────────────────
+window.switchM2Tab = function(tab) {
+    document.querySelectorAll('.m2-tab').forEach(el => el.classList.remove('active'));
+    document.getElementById('m2-tab-' + tab).classList.add('active');
+    document.querySelectorAll('.m2-section').forEach(el => el.classList.remove('active'));
+    document.getElementById('m2-section-' + tab).classList.add('active');
+};
+
+window.switchM2ConfigDir = function(dir) {
+    document.querySelectorAll('.m2-subtab').forEach(el => el.classList.remove('active'));
+    document.getElementById('m2-subtab-' + dir).classList.add('active');
+    document.querySelectorAll('.m2-dir-card').forEach(el => el.classList.remove('active'));
+    document.getElementById('m2-card-' + dir).classList.add('active');
+};
+
+window.applyM2Source = function(dir) {
+    const src = document.getElementById('m2-src-' + dir).value.trim();
+    if (!src) return;
+    fetch('/api/mode2_config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'set_source', dir, src })
+    }).then(r => r.json()).then(data => {
+        toast(data.message, data.status === 'success' ? 'green' : 'red');
+        // Canvas poller auto-refreshes — no manual src update needed
+    });
+};
+
+window.toggleControlMode = function() {
+    fetch('/api/mode2_config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'toggle_mode' })
+    }).then(r => r.json()).then(data => {
+        const btn = document.getElementById('m2-mode-toggle');
+        if (btn && data.mode_name) {
+            btn.textContent = data.mode_name.toUpperCase();
+            btn.classList.toggle('rush', data.mode === 2);
+            toast(`Mode switched to: ${data.mode_name}`, 'cyan');
+        } else if (data.message) {
+            toast(data.message, 'yellow');
+        }
+    }).catch(err => {
+        console.error("Toggle Mode Error:", err);
+        toast("Failed to toggle control mode", "red");
+    });
+};
+
+window.toggleSystem = function() {
+    const btn = document.getElementById('m2-btn-toggle');
+    const isRunning = btn.classList.contains('stop');
+    systemAction(isRunning ? 'stop' : 'start');
+};
+
+// ─── MODE 2 ROI MANAGEMENT ─────────────────────────────────
+let m2ROIDrawingDir = null;
+let m2ROIPoints = {}; // { North: [], ... }
+
+window.toggleM2ROIDraw = function(dir) {
+    if (m2ROIDrawingDir === dir) {
+        m2ROIDrawingDir = null;
+        document.getElementById('m2-roi-draw-' + dir).classList.remove('active');
+        document.getElementById('m2-roi-canvas-' + dir).classList.remove('drawing');
+        document.getElementById('m2-card-' + dir).classList.remove('drawing-mode');
+    } else {
+        if (m2ROIDrawingDir) toggleM2ROIDraw(m2ROIDrawingDir);
+        m2ROIDrawingDir = dir;
+        document.getElementById('m2-roi-draw-' + dir).classList.add('active');
+        document.getElementById('m2-roi-canvas-' + dir).classList.add('drawing');
+        document.getElementById('m2-card-' + dir).classList.add('drawing-mode');
+        if (!m2ROIPoints[dir]) m2ROIPoints[dir] = [];
+        setTimeout(() => drawM2ROIScene(dir), 50);
+    }
+};
+
+window.clearM2ROI = function(dir) {
+    m2ROIPoints[dir] = [];
+    drawM2ROIScene(dir);
+    document.getElementById('m2-roi-status-' + dir).textContent = 'ROI CLEARED';
+};
+
+window.saveM2ROI = function(dir) {
+    const pts = m2ROIPoints[dir];
+    if (!pts || pts.length !== 4) { toast('Exactly 4 points required', 'red'); return; }
+    
+    const img = document.getElementById('m2-prev-' + dir);
+    const rect = getContainedImageBounds(img);
+    if (!rect) return;
+    
+    const pts_nat = pts.map(p => {
+        const x_rel = p.x - rect.x;
+        const y_rel = p.y - rect.y;
+        const natW = img.naturalWidth || img.width;
+        const natH = img.naturalHeight || img.height;
+        return [ 
+            Math.round(x_rel * (natW / rect.w)), 
+            Math.round(y_rel * (natH / rect.h)) 
+        ];
+    });
+
+    fetch('/api/mode2_rois', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dir, points: pts_nat })
+    }).then(r => r.json()).then(data => {
+        toast(data.message, data.status === 'success' ? 'green' : 'red');
+        if (data.status === 'success') {
+            toggleM2ROIDraw(dir);
+            document.getElementById('m2-roi-status-' + dir).textContent = 'ROI SAVED';
+        }
+    });
+};
+
+function drawM2ROIScene(dir) {
+    const canvas = document.getElementById('m2-roi-canvas-' + dir);
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const img = document.getElementById('m2-prev-' + dir);
+    
+    // Auto-resize canvas to match displayed image
+    if (img.clientWidth > 0 && canvas.width !== img.clientWidth) {
+        canvas.width = img.clientWidth;
+        canvas.height = img.clientHeight;
+    }
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const pts = m2ROIPoints[dir] || [];
+
+    // Draw lines
+    if (pts.length > 0) {
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y);
+        pts.forEach(p => ctx.lineTo(p.x, p.y));
+        if (pts.length === 4) ctx.closePath();
+        ctx.strokeStyle = '#f5c400';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        if (pts.length === 4) {
+            ctx.fillStyle = 'rgba(245,196,0,0.2)';
+            ctx.fill();
+        }
+    }
+
+    // Draw points
+    pts.forEach((p, idx) => {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+        ctx.fillStyle = '#f5c400';
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+    });
+}
+
+function initM2ROICanvases() {
+    DIRECTIONS.forEach(dir => {
+        const canv = document.getElementById('m2-roi-canvas-' + dir);
+        if (!canv) return;
+        canv.addEventListener('mousedown', (e) => {
+            if (m2ROIDrawingDir !== dir) return;
+            if ((m2ROIPoints[dir] || []).length >= 4) return;
+            const rect = canv.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            if (!m2ROIPoints[dir]) m2ROIPoints[dir] = [];
+            m2ROIPoints[dir].push({ x, y });
+            drawM2ROIScene(dir);
+            
+            const remaining = 4 - m2ROIPoints[dir].length;
+            document.getElementById('m2-roi-status-' + dir).textContent = 
+                remaining > 0 ? `${remaining} POINTS REMAINING` : 'ROI COMPLETE - CLICK SAVE';
+        });
+    });
+}
+
+initM2ROICanvases();
 function loadExternalTLs() {
     fetch('/tl_panel', { headers: { 'Accept': 'application/json' } })
         .then(r => r.json())
@@ -864,840 +1322,84 @@ function loadExternalTLs() {
                 appState.tlIds = data.tl_ids;
                 saveState();
                 ['North', 'South', 'East', 'West'].forEach(l => {
-                    const inp = document.getElementById(`tl-${l.toLowerCase()}`);
-                    if (inp) inp.value = data.tl_ids[l] || '';
-                    const el = document.getElementById(`tl-id-${l}`);
-                    if (el) el.textContent = data.tl_ids[l] || '--';
+                    const apiInp = document.getElementById(`api-${l.toLowerCase()}`);
+                    const entry = data.tl_ids[l] || {};
+                    if (apiInp) apiInp.value = entry.api || '';
                 });
             }
         });
 }
-
-function loadExternalROIs() {
-    fetch('/roi_panel')
-        .then(r => r.json())
-        .then(data => {
-            if (data.current_rois) {
-                appState.rois = data.current_rois;
-                drawROIScene();
-                saveState();
-            }
-            if (data.roi_enabled !== undefined) {
-                const cb = document.getElementById('roi-enable-cb');
-                if (cb) cb.checked = data.roi_enabled;
-            }
-        });
-    refreshRoiSetsList();
-}
-
-const roiEnableCb = document.getElementById('roi-enable-cb');
-if (roiEnableCb) {
-    roiEnableCb.addEventListener('change', (e) => {
-        fetch('/api/roi_enable', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ enabled: e.target.checked })
-        }).then(r => r.json()).then(data => {
-            toast('ROI Processing ' + (data.enabled ? 'ENABLED' : 'DISABLED'), 'cyan');
-        });
-    });
-}
-
-loadExternalROIs();
 loadExternalTLs();
-// ─── LIVE STATS POLLING ──────────────────────────────────────
-let phaseMax = 30;
 
-function updateDashboardStats(data) {
-    const isConn = data.connection === "Connected";
-    const counts = (typeof currentMode !== 'undefined' && currentMode === 2) ? (data.mode2_counts || {}) : (data.counts || {});
-    const greenLane = appState.localControlEnabled ? Object.entries(appState.localTLStates).find(([_, state]) => state === 'green')?.[0] || null : (data.green_lane || null);
-    const timer = data.timer || 0;
-
-    let total = 0;
-    ['North', 'South', 'East', 'West'].forEach(lane => {
-        const val = counts[lane] || 0;
-        total += val;
-        const el = document.getElementById('count-' + lane);
-        if (el) el.textContent = val;
-
-        // Active indicator on card
-        const card = document.getElementById('lane-card-' + lane);
-        if (card) {
-            if (lane === greenLane) card.classList.add('active');
-            else card.classList.remove('active');
-        }
-    });
-
-    document.getElementById('tb-total-veh').textContent = total;
-    updatePhaseVisuals(data);
-}
-
-function updatePhaseVisuals(data) {
-    const isConn = data.connection === "Connected";
-    const useLocalTL = appState.localControlEnabled;
-    const greenLane = useLocalTL ? Object.entries(appState.localTLStates).find(([_, state]) => state === 'green')?.[0] || null : (data.green_lane || null);
-    const phTimer = data.timer;
-    const counts = data.counts || {};
-    const tlStates = useLocalTL ? appState.localTLStates : (data.tl_states || {});
-
-    if (!useLocalTL && greenLane) {
-        let cycleDuration = data.cycle_duration || 30;
-        let pct = (phTimer / cycleDuration) * 100;
-        document.getElementById('ph-bar').style.width = pct + '%';
-        document.getElementById('ph-timer').textContent = phTimer + 's';
-        document.getElementById('ph-lane').textContent = greenLane.toUpperCase();
-    } else {
-        document.getElementById('ph-bar').style.width = '0%';
-        document.getElementById('ph-timer').textContent = '--s';
-        document.getElementById('ph-lane').textContent = '--';
-    }
-
-    // Update Topbar
-    if (useLocalTL) {
-        updateLocalPhaseFromStates();
-        document.getElementById('tb-cycle-timer').textContent = '--s';
-    } else {
-        document.getElementById('tb-phase-lane').textContent = greenLane ? greenLane.toUpperCase() : '--';
-        document.getElementById('tb-cycle-timer').textContent = greenLane ? phTimer + 's' : '--s';
-    }
-
-    // Update TL Visual States and Counts
-    ['North', 'South', 'East', 'West'].forEach(lane => {
-        const state = tlStates[lane] || 'red';
-        setTLState(lane, state);
-
-        // Show current count in the Mapping window's Visual State box (matching user's screenshot)
-        const idEl = document.getElementById('tl-id-' + lane);
-        if (idEl) idEl.textContent = counts[lane] !== undefined ? counts[lane] : '--';
-    });
-}
-
-function setTLState(lane, state) {
-    const states = ['red', 'yellow', 'green'];
-    states.forEach(s => {
-        const el = document.getElementById('tl-' + s[0] + '-' + lane);
-        if (!el) return;
-        el.className = 'tl-light' + (s === state ? ' lit-' + s : '');
-    });
-}
-
-let lastBackendStatus = true;
-let lastFeedStatus = "NO SIGNAL";
-
-function pollStats() {
-    fetch('/api/lane_counts')
-        .then(r => r.json())
-        .then(data => {
-            if (!lastBackendStatus || (lastFeedStatus === "NO SIGNAL" && data.feed_status === "ONLINE")) {
-                // Backend recovered, OR feed came online. Reload the stream to fix frozen MJPEG
-                console.log("[DEBUG] Connection recovered or Feed came Online, reloading Live Feed...");
-                updateLiveFeedSrc();
-                lastBackendStatus = true;
-            }
-            lastFeedStatus = data.feed_status;
-
-            updateDashboardStats(data);
-            setApiStatus(data.connection);
-            // Update topbar system + detection status
-            const tbSys = document.getElementById('tb-system-status');
-            if (tbSys) {
-                if (data.system_started) {
-                    tbSys.textContent = 'RUNNING';
-                    tbSys.className = 'tb-stat-value green';
-                } else {
-                    tbSys.textContent = 'STOPPED';
-                    tbSys.className = 'tb-stat-value red';
-                }
-            }
-            // Detection status
-            const tbDet = document.getElementById('tb-detect-status');
-            if (tbDet) {
-                const ds = data.detect_status || 'INACTIVE';
-                tbDet.textContent = ds;
-                tbDet.style.color = ds === 'ACTIVE' ? 'var(--green)' : ds === 'READY' ? 'var(--yellow)' : 'var(--text-dim)';
-            }
-            setDetectionStatus(data.detect_status);
-            setFeedStatus(data.feed_status);
-        })
-        .catch(() => {
-            lastBackendStatus = false;
-            setApiStatus("Disconnected");
-            // Clear stats on network error
-            updateDashboardStats({ connection: "Disconnected" });
-        });
-}
-
-function setApiStatus(statusString) {
-    const dot = document.getElementById('dot-control');
-    const txt = document.getElementById('stat-control');
-    const tbEl = document.getElementById('tb-control-status');
-    const connBtn = document.getElementById('sb-conn');
-    const toggleBtn = document.getElementById('btn-toggle-connect');
-
-    const isConnected = statusString === "Connected";
-    const isConnecting = statusString === "Connecting...";
-
-    if (txt) txt.textContent = statusString.toUpperCase();
-    if (tbEl) tbEl.textContent = statusString.toUpperCase();
-
-    if (toggleBtn) {
-        toggleBtn.textContent = isConnected ? "DISCONNECT" : (isConnecting ? "CONNECTING..." : "CONNECT");
-        toggleBtn.className = isConnected ? "btn btn-red" : "btn btn-green";
-    }
-
-    if (isConnected) {
-        if (dot) dot.className = 'dot green';
-        if (txt) txt.style.color = 'var(--green)';
-        if (tbEl) tbEl.className = 'tb-stat-value green';
-        if (connBtn) connBtn.classList.add('connected');
-    } else if (isConnecting) {
-        if (dot) dot.className = 'dot yellow';
-        if (txt) txt.style.color = 'var(--yellow)';
-        if (tbEl) tbEl.className = 'tb-stat-value yellow';
-        if (connBtn) connBtn.classList.remove('connected');
-    } else {
-        if (dot) dot.className = 'dot red';
-        if (txt) txt.style.color = 'var(--red)';
-        if (tbEl) tbEl.className = 'tb-stat-value red';
-        if (connBtn) connBtn.classList.remove('connected');
-    }
-}
-
-function setDetectionStatus(status) {
-    const dot = document.getElementById('dot-detect');
-    const txt = document.getElementById('stat-detect');
-    if (!dot || !txt) return;
-    txt.textContent = status.toUpperCase();
-    if (status === "ACTIVE") {
-        dot.className = 'dot green';
-        txt.style.color = 'var(--green)';
-    } else {
-        dot.className = 'dot';
-        txt.style.color = 'var(--text-dim)';
-    }
-}
-
-function setFeedStatus(status) {
-    const dot = document.getElementById('dot-feed');
-    const txt = document.getElementById('stat-feed');
-    if (!dot || !txt) return;
-    txt.textContent = status.toUpperCase();
-    if (status === "ONLINE") {
-        dot.className = 'dot green';
-        txt.style.color = 'var(--green)';
-    } else if (status === "STREAMING") {
-        dot.className = 'dot cyan';
-        txt.style.color = 'var(--cyan)';
-    } else {
-        dot.className = 'dot';
-        txt.style.color = 'var(--text-dim)';
-    }
-}
-
-setInterval(pollStats, 1000);
-pollStats();
-
-// ─── API TEST BUTTON ─────────────────────────────────────────
-const testApiBtn = document.getElementById('btn-test-api');
-if (testApiBtn) {
-    testApiBtn.addEventListener('click', () => {
-        const c = appState.config;
-        const url = 'http://' + (c.flaskHost === '0.0.0.0' ? 'localhost' : c.flaskHost) + ':' + c.flaskPort + '/api/lane_counts';
-        toast('Testing: ' + url, 'cyan');
-        fetch(url)
-            .then(r => r.json())
-            .then(data => {
-                toast('API OK -- ' + JSON.stringify(data).slice(0, 60), 'green');
-                addLog('OK', 'API test passed: ' + url);
-            })
-            .catch(err => {
-                toast('API UNREACHABLE', 'red');
-                addLog('ERR', 'API test failed: ' + url);
-            });
-    });
-}
-
-const testFeedBtn = document.getElementById('btn-test-feed');
-if (testFeedBtn) {
-    testFeedBtn.addEventListener('click', () => {
-        toast('Testing live feed status...', 'cyan');
-        fetch('/api/camera/status')
-            .then(r => r.json())
-            .then(data => {
-                const msg = 'Feed ' + (data.status || 'inactive').toUpperCase();
-                toast(msg, data.status === 'online' ? 'green' : 'red');
-                addLog('OK', msg);
-                setFeedStatus(data.status || 'NO SIGNAL');
-            }).catch(() => {
-                toast('Feed test failed', 'red');
-                addLog('ERR', 'Feed test failed');
-                setFeedStatus('NO SIGNAL');
-            });
-    });
-}
-
-// ─── INIT FEED ───────────────────────────────────────────────
-updateLiveFeedSrc();
-
-// Start in Mode 2 by default
-let currentMode = 2;
-switchMode(2);
-
-// ─── MODE SWITCHING ──────────────────────────────────────────
-
-function switchMode(mode) {
-    currentMode = 2; // Always force Mode 2
-    const canvas = document.getElementById('canvas');
-    const mode2Panel = document.getElementById('mode2-panel');
-    const sbMode2 = document.getElementById('sb-mode2');
-
-    if(canvas) canvas.style.display = 'none';
-    if(mode2Panel) mode2Panel.classList.add('active');
-    if(sbMode2) sbMode2.classList.add('active');
-    
-    // Always load config for the active Mode 2
-    try {
-        loadM2ConfigFromBackend();
-    } catch (e) {
-        console.warn("M2 config load deferred until defined");
-    }
-}
-
-// Sidebar M2 button just forces refresh of Mode 2 if clicked
-document.getElementById('sb-mode2').addEventListener('click', () => {
-    switchMode(2);
-});
-
-// ─── MODE 2 INNER TABS ───────────────────────────────────────
-function switchM2Tab(tab) {
-    ['config', 'main'].forEach(t => {
-        document.getElementById('m2-tab-' + t).classList.toggle('active', t === tab);
-        document.getElementById('m2-section-' + t).classList.toggle('active', t === tab);
-    });
-}
-
-// ─── MODE 2 SOURCE MANAGEMENT ────────────────────────────────
-const M2_DIRS = ['North', 'South', 'East', 'West'];
-
-function applyM2Source(direction) {
-    const src = document.getElementById('m2-src-' + direction).value.trim();
-    const payload = {};
-    payload['src_' + direction.toLowerCase()] = src;
-
-    fetch('/api/mode2_config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    }).then(r => r.json()).then(data => {
-        if (data.status === 'success') {
-            toast(direction + ' source applied', 'green');
-            // Refresh stream src to trigger reload
-            refreshM2Stream(direction);
-            updateM2CardState(direction, !!src);
-        } else {
-            toast('Failed to apply ' + direction, 'red');
-        }
-    }).catch(() => toast('Network Error', 'red'));
-}
-
-function refreshM2Stream(direction) {
-    const ts = Date.now();
-    const prevImg = document.getElementById('m2-prev-' + direction);
-    const mainImg = document.getElementById('m2-main-' + direction);
-    const newSrc = `/video_feed/mode2/${direction}?t=${ts}`;
-    if (prevImg) prevImg.src = newSrc;
-    if (mainImg) mainImg.src = newSrc;
-
-    // Badge update
-    const badge = document.getElementById('m2-prev-badge-' + direction);
-    const src = document.getElementById('m2-src-' + direction)?.value?.trim();
-    if (badge) {
-        badge.textContent = src ? 'LIVE' : 'NO SOURCE';
-        badge.className = 'm2-prev-badge' + (src ? ' live' : '');
-    }
-}
-
-function updateM2CardState(direction, isConfigured) {
-    const card = document.getElementById('m2-card-' + direction);
-    if (card) card.classList.toggle('configured', isConfigured);
-}
-
-document.getElementById('m2-save-all').addEventListener('click', () => {
-    const payload = {};
-    let anyFilled = false;
-    M2_DIRS.forEach(d => {
-        const val = document.getElementById('m2-src-' + d)?.value?.trim() || '';
-        payload['src_' + d.toLowerCase()] = val;
-        if (val) anyFilled = true;
-    });
-
-    fetch('/api/mode2_config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    }).then(r => r.json()).then(data => {
-        toast('All sources saved', data.status === 'success' ? 'green' : 'red');
-        if (data.status === 'success') {
-            M2_DIRS.forEach(d => {
-                const src = payload['src_' + d.toLowerCase()];
-                refreshM2Stream(d);
-                updateM2CardState(d, !!src);
-            });
-        }
-    }).catch(() => toast('Network Error', 'red'));
-});
-
-function loadM2ConfigFromBackend() {
-    fetch('/api/mode2_config')
-        .then(r => r.json())
-        .then(data => {
-            if (!data.config) return;
-            M2_DIRS.forEach(d => {
-                const val = data.config[d] || '';
-                const inp = document.getElementById('m2-src-' + d);
-                if (inp) inp.value = val;
-                updateM2CardState(d, !!val);
-                const badge = document.getElementById('m2-prev-badge-' + d);
-                if (badge) {
-                    badge.textContent = val ? 'LIVE' : 'NO SOURCE';
-                    badge.className = 'm2-prev-badge' + (val ? ' live' : '');
-                }
-            });
-        })
-        .catch(() => { });
-}
-
-// ─── MODE 2 SIGNAL SYNC (reuses existing poll data) ──────────
-const PRIORITY_LABELS = ['▲ PRIORITY #1', '▲ PRIORITY #2', '▲ PRIORITY #3', 'LOWEST'];
-const PRIORITY_RANK_CLASSES = ['rank-1', 'rank-2', 'rank-3', 'rank-4'];
-
-function updateMode2Visuals(data) {
-    if (currentMode !== 2) return;
-    const isConn = data.connection === 'Connected';
-    const useLocalTL = appState.localControlEnabled;
-    const tlStates = useLocalTL ? appState.localTLStates : (data.tl_states || {});
-    const m2counts = data.mode2_counts || {};
-    const greenLane = useLocalTL ? Object.entries(tlStates).find(([_, state]) => state === 'green')?.[0] || null : data.green_lane;
-    const timer = data.timer || 0;
-    const cycleDuration = data.cycle_duration || 30;
-    // Intensity data (populated via separate fetch in syncSystemButtons)
-    const intensityData = window._lastIntensityData || {};
-
-    // ─── Compute priority ranking by vehicle count ──────────
-    const sortedLanes = [...M2_DIRS].sort((a, b) => {
-        const ca = m2counts[a] || 0, cb = m2counts[b] || 0;
-        return cb - ca;
-    });
-    const rankMap = {};
-    sortedLanes.forEach((lane, i) => { rankMap[lane] = i; });
-
-    // Max count for load bar scaling
-    const maxCount = Math.max(1, ...M2_DIRS.map(l => m2counts[l] || 0));
-
-    M2_DIRS.forEach(lane => {
-        const state = tlStates[lane] || 'red';
-        const count = m2counts[lane] !== undefined ? m2counts[lane] : (data.counts || {})[lane] || 0;
-
-        // ── Realistic TL bulbs (new .m2-tl-bulb elements) ─────
-        ['red', 'yellow', 'green'].forEach(s => {
-            const el = document.getElementById('m2-tl-' + s[0] + '-' + lane);
-            if (!el) return;
-            el.className = 'm2-tl-bulb' + (s === state ? ' lit-' + s : '');
-        });
-
-        // ── Vehicle count ──────────────────────────────────────
-        const cntEl = document.getElementById('m2-cnt-' + lane);
-        if (cntEl) cntEl.textContent = count;
-
-        // ── Tile green-active highlight ────────────────────────
-        const tile = document.getElementById('m2-tile-' + lane);
-        if (tile) tile.classList.toggle('green-active', lane === greenLane && state === 'green');
-
-        // ── Priority badge (always show, not just when connected) ──────────
-        const badge = document.getElementById('m2-pri-' + lane);
-        if (badge) {
-            const rank = rankMap[lane];
-            const hasVehicles = count > 0;
-            badge.className = 'm2-priority-badge';
-            if (hasVehicles) {
-                badge.classList.add(PRIORITY_RANK_CLASSES[Math.min(rank, 3)]);
-                badge.textContent = PRIORITY_LABELS[Math.min(rank, 3)];
-                badge.style.display = '';
-            } else {
-                badge.style.display = 'none';
-            }
-        }
-
-        // ── Countdown bar (active green lane — works without controller) ──
-        const cdBar = document.getElementById('m2-cd-' + lane);
-        if (cdBar) {
-            if (lane === greenLane && (state === 'green' || state === 'yellow')) {
-                const pct = Math.min(100, (timer / cycleDuration) * 100);
-                cdBar.style.width = pct + '%';
-                cdBar.className = 'm2-tl-countdown-bar' + (pct < 25 ? ' critical' : (pct < 50 ? ' warn' : ''));
-            } else {
-                cdBar.style.width = '0%';
-                cdBar.className = 'm2-tl-countdown-bar';
-            }
-        }
-
-        // ── Relative traffic load bar ──────────────────────────
-        const loadBar = document.getElementById('m2-load-' + lane);
-        if (loadBar) {
-            const pct = Math.round((count / maxCount) * 100);
-            loadBar.style.width = pct + '%';
-            loadBar.className = 'm2-tl-load-bar' + (pct >= 75 ? ' hi' : (pct >= 40 ? ' med' : ''));
-        }
-
-        // ── Intensity score + wait time overlay ────────────────
-        const intensityEl = document.getElementById('m2-intensity-' + lane);
-        const waitEl      = document.getElementById('m2-wait-' + lane);
-        if (intensityEl) {
-            const sc = (intensityData.scores || {})[lane] || 0;
-            intensityEl.textContent = 'SCR: ' + sc.toFixed(0);
-            intensityEl.style.color = sc > 50 ? 'var(--red)' : sc > 20 ? 'var(--yellow)' : 'var(--text-dim)';
-        }
-        if (waitEl) {
-            const wt = (intensityData.wait_times || {})[lane] || 0;
-            waitEl.textContent = 'WAIT: ' + (wt > 0 ? wt.toFixed(0) + 's' : '0s');
-            waitEl.style.color = wt > 30 ? 'var(--red)' : wt > 10 ? 'var(--yellow)' : 'var(--text-dim)';
-        }
-    });
-
-    // ── Update Control Mode Button ─────────────────────────────
-    const mode = data.control_mode || 1;
-    const btn = document.getElementById('m2-mode-toggle');
-    if (btn) {
-        if (mode === 2) {
-            btn.textContent = 'RUSH PRIORITY';
-            btn.classList.add('rush');
-        } else {
-            btn.textContent = 'FIXED CYCLE';
-            btn.classList.remove('rush');
-        }
-    }
-}
-
-
-window.toggleControlMode = function () {
-    const btn = document.getElementById('m2-mode-toggle');
-    const currentIsRush = btn ? btn.classList.contains('rush') : false;
-    const newMode = currentIsRush ? 1 : 2;
-
-    fetch('/api/control_mode', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: newMode })
-    }).then(r => r.json()).then(data => {
-        toast('Control Mode: ' + (newMode === 2 ? 'RUSH PRIORITY' : 'FIXED CYCLE'), newMode === 2 ? 'amber' : 'cyan');
-    }).catch(() => toast('Mode Update Failed', 'red'));
-};
-
-// ─── M2 SYSTEM START / STOP (calls /api/system) ─────────────
-function _callSystemAPI(action) {
-    return fetch('/api/system', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action })
-    }).then(r => r.json());
-}
-
-window.m2SystemStart = function () {
-    _callSystemAPI('start').then(data => {
-        if (data.status === 'success') {
-            toast('▶ System STARTED — Traffic Logic Active', 'green');
-        } else {
-            toast('Start failed: ' + data.message, 'red');
-        }
-    }).catch(() => toast('Network error calling /api/system', 'red'));
-};
-
-window.m2SystemStop = function () {
-    _callSystemAPI('stop').then(data => {
-        toast('■ System STOPPED', 'red');
-    }).catch(() => toast('Network error', 'red'));
-};
-
-// Also wire the start/stop buttons in connection.html
-const _connStartBtn = document.getElementById('btn-start-system');
-const _connStopBtn  = document.getElementById('btn-stop-system');
-if (_connStartBtn) _connStartBtn.addEventListener('click', window.m2SystemStart);
-if (_connStopBtn)  _connStopBtn.addEventListener('click', window.m2SystemStop);
-
-// Sync system status button states from poll data
-function syncSystemButtons(data) {
-    const isStarted = data.system_started === true;
-    const startBtn  = document.getElementById('m2-btn-start');
-    const stopBtn   = document.getElementById('m2-btn-stop');
-    if (startBtn) {
-        startBtn.style.background = isStarted ? 'rgba(0,232,122,0.2)' : 'none';
-        startBtn.textContent = isStarted ? '▶ RUNNING' : '▶ START';
-    }
-    if (stopBtn) {
-        stopBtn.style.background = isStarted ? 'none' : 'rgba(240,48,80,0.1)';
-        stopBtn.textContent = '■ STOP';
-    }
-    // Fetch intensity scores periodically for display in tiles
-    fetch('/api/intensity_scores').then(r => r.json()).then(d => {
-        window._lastIntensityData = d;
-    }).catch(() => {});
-}
-
-window.switchM2ConfigDir = function (dir) {
-    const directions = ['North', 'West', 'South', 'East'];
-    directions.forEach(d => {
-        const tab = document.getElementById('m2-subtab-' + d);
-        const card = document.getElementById('m2-card-' + d);
-        if (tab) tab.classList.toggle('active', d === dir);
-        if (card) card.classList.toggle('active', d === dir);
-    });
-    console.log(`[MODE2] Configuration switched to: ${dir}`);
-};
-
-// Hook into existing pollStats
-const _origPollStats = pollStats;
-// Patch: extend updateDashboardStats to also call mode2
-const _origUpdateDash = updateDashboardStats;
-updateDashboardStats = function (data) {
-    _origUpdateDash(data);
-    updateMode2Visuals(data);
-    syncSystemButtons(data);
-};
-
-// Load M2 config at startup (non-blocking)
-loadM2ConfigFromBackend();
-
-// ─── MODE 2 ROI DRAWING ──────────────────────────────────────
-const m2RoiState = {};  // { direction: { points: [{x,y}], drawMode: bool, savedPts: [[x,y]] } }
-
-M2_DIRS.forEach(d => {
-    m2RoiState[d] = { points: [], drawMode: false, savedPts: null };
-});
-
-function _getM2Canvas(dir) {
-    return document.getElementById('m2-roi-canvas-' + dir);
-}
-
-function _syncM2CanvasSize(dir) {
-    const canvas = _getM2Canvas(dir);
-    if (!canvas) return;
-    const preview = canvas.closest('.m2-card-preview');
-    if (!preview) return;
-    canvas.width = preview.clientWidth;
-    canvas.height = preview.clientHeight;
-}
-
-function _drawM2ROI(dir) {
-    const canvas = _getM2Canvas(dir);
-    if (!canvas) return;
-    _syncM2CanvasSize(dir);
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    const state = m2RoiState[dir];
-    const img = document.getElementById('m2-prev-' + dir);
-    const rect = getContainedImageBounds(img);
-
-    // Draw saved ROI (always shown when in draw mode so user sees existing)
-    if (state.savedPts && state.savedPts.length >= 3 && rect) {
-        const sx = rect.w / (img.naturalWidth || 1);
-        const sy = rect.h / (img.naturalHeight || 1);
-
-        ctx.beginPath();
-        ctx.moveTo(rect.x + state.savedPts[0][0] * sx, rect.y + state.savedPts[0][1] * sy);
-        state.savedPts.forEach(p => {
-            ctx.lineTo(rect.x + p[0] * sx, rect.y + p[1] * sy);
-        });
-        ctx.closePath();
-        ctx.strokeStyle = 'rgba(0,232,122,0.75)';
-        ctx.lineWidth = 2.5;
-        ctx.stroke();
-        ctx.fillStyle = 'rgba(0,232,122,0.15)';
-        ctx.fill();
-    }
-
-    // Draw in-progress points
-    const pts = state.points;
-    pts.forEach((pt, i) => {
-        ctx.beginPath();
-        ctx.arc(pt.x, pt.y, 5, 0, Math.PI * 2);
-        ctx.fillStyle = '#f5c400';
-        ctx.fill();
-        ctx.strokeStyle = '#fff';
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-        ctx.fillStyle = '#fff';
-        ctx.font = '10px "Share Tech Mono"';
-        ctx.fillText(i + 1, pt.x + 8, pt.y + 9);
-    });
-
-    if (pts.length > 1) {
-        ctx.beginPath();
-        ctx.moveTo(pts[0].x, pts[0].y);
-        pts.forEach(p => ctx.lineTo(p.x, p.y));
-        if (pts.length === 4) ctx.closePath();
-        ctx.strokeStyle = '#f5c400';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-    }
-
-    // Status text
-    const statusEl = document.getElementById('m2-roi-status-' + dir);
-    if (statusEl) {
-        if (pts.length > 0) {
-            const rem = 4 - pts.length;
-            statusEl.textContent = rem > 0 ? rem + ' MORE POINT(S)' : 'READY — SAVE ROI';
-            statusEl.style.color = rem > 0 ? 'var(--yellow)' : 'var(--green)';
-        } else if (state.savedPts) {
-            statusEl.textContent = 'ROI ACTIVE';
-            statusEl.style.color = 'var(--green)';
-        } else {
-            statusEl.textContent = 'NO ROI SET';
-            statusEl.style.color = 'var(--text-dim)';
-        }
-    }
-}
-
-function toggleM2ROIDraw(dir) {
-    const state = m2RoiState[dir];
-    state.drawMode = !state.drawMode;
-    state.points = [];  // reset in-progress on toggle
-
-    const canvas = _getM2Canvas(dir);
-    const btn = document.getElementById('m2-roi-draw-' + dir);
-    if (!canvas) return;
-
-    if (state.drawMode) {
-        _syncM2CanvasSize(dir);
-        canvas.classList.add('drawing');
-        if (btn) btn.classList.add('active');
-        _drawM2ROI(dir);
-        toast(dir + ': Click 4 points on preview to draw ROI', 'yellow');
-    } else {
-        canvas.classList.remove('drawing');
-        if (btn) btn.classList.remove('active');
-    }
-}
-
-function clearM2ROI(dir) {
-    const state = m2RoiState[dir];
-    state.points = [];
-    state.savedPts = null;
-
-    const canvas = _getM2Canvas(dir);
-    if (canvas) {
+// ─── CANVAS SNAPSHOT POLLER ────────────────────────────────
+// Polls /snapshot/mode2/<dir> every ~100ms and draws to canvas.
+// No persistent connections → page loads instantly, no spinner.
+(function() {
+    const DIRS = ['North', 'South', 'East', 'West'];
+    const CANVASES = [
+        ...DIRS.map(d => ({ id: `m2-main-${d}`, dir: d })),
+        ...DIRS.map(d => ({ id: `m2-prev-${d}`,  dir: d })),
+    ];
+
+    const activePollers = {};
+
+    function startPoller(id, dir) {
+        if (activePollers[id]) return; // already running
+        let running = true;
+        activePollers[id] = true;
+
+        const canvas = document.getElementById(id);
+        if (!canvas) return;
         const ctx = canvas.getContext('2d');
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-    }
+        const img = new Image();
+        const isMain = id.startsWith('m2-main');
 
-    const statusEl = document.getElementById('m2-roi-status-' + dir);
-    if (statusEl) { statusEl.textContent = 'NO ROI SET'; statusEl.style.color = 'var(--text-dim)'; }
-
-    // Clear on backend too
-    fetch('/api/mode2_rois', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lane: dir, points: [] })
-    }).then(r => r.json()).then(() => toast(dir + ' ROI cleared', 'yellow'))
-        .catch(() => toast('Network Error', 'red'));
-}
-
-function saveM2ROI(dir) {
-    const state = m2RoiState[dir];
-    if (state.points.length !== 4) {
-        toast('Need exactly 4 points for ' + dir + ' ROI', 'red');
-        return;
-    }
-
-    const canvas = _getM2Canvas(dir);
-    const preview = canvas ? canvas.closest('.m2-card-preview') : null;
-    const img = document.getElementById('m2-prev-' + dir);
-
-    // Scale from display point (relative to whole canvas) to natural image pixels
-    const rect = getContainedImageBounds(img);
-    if (!rect) {
-        toast('Preview not ready', 'red');
-        return;
-    }
-
-    const pts = state.points.map(p => [
-        Math.round((p.x - rect.x) * (img.naturalWidth / rect.w)),
-        Math.round((p.y - rect.y) * (img.naturalHeight / rect.h))
-    ]);
-
-    // Keep natural-space copy for rendering
-    state.savedPts = pts;
-    state.points = [];
-    state.drawMode = false;
-
-    const cvs = _getM2Canvas(dir);
-    const btn = document.getElementById('m2-roi-draw-' + dir);
-    if (cvs) cvs.classList.remove('drawing');
-    if (btn) btn.classList.remove('active');
-    _drawM2ROI(dir);
-
-    fetch('/api/mode2_rois', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lane: dir, points: pts })
-    }).then(r => r.json()).then(data => {
-        toast(data.message || (dir + ' ROI saved'), data.status === 'success' ? 'green' : 'red');
-    }).catch(() => toast('Network Error', 'red'));
-}
-
-// Wire canvas click events
-M2_DIRS.forEach(dir => {
-    const canvas = _getM2Canvas(dir);
-    if (!canvas) return;
-    canvas.addEventListener('mousedown', e => {
-        const state = m2RoiState[dir];
-        if (!state.drawMode || state.points.length >= 4) return;
-        const rect = canvas.getBoundingClientRect();
-        state.points.push({ x: Math.round(e.clientX - rect.left), y: Math.round(e.clientY - rect.top) });
-        _drawM2ROI(dir);
-    });
-});
-
-// Load saved ROIs from backend and render
-function loadM2ROIsFromBackend() {
-    fetch('/api/mode2_rois')
-        .then(r => r.json())
-        .then(data => {
-            if (!data.rois) return;
-            M2_DIRS.forEach(dir => {
-                const pts = data.rois[dir];
-                if (pts && pts.length >= 3) {
-                    const state = m2RoiState[dir];
-                    const canvas = _getM2Canvas(dir);
-                    const preview = canvas ? canvas.closest('.m2-card-preview') : null;
-                    const img = document.getElementById('m2-prev-' + dir);
-
-                    // Convert natural coords back to display-space
-                    state.savedPts = pts; // We store national coords now to handle resizing correctly
-
-                    const statusEl = document.getElementById('m2-roi-status-' + dir);
-                    if (statusEl) { statusEl.textContent = 'ROI ACTIVE'; statusEl.style.color = 'var(--green)'; }
-
-                    // Show on canvas (needs to be visible)
-                    if (canvas) {
-                        _syncM2CanvasSize(dir);
-                        canvas.classList.add('drawing');
-                        _drawM2ROI(dir);
-                        // Keep canvas visible to show roi overlay permanently
+        async function poll() {
+            while (running) {
+                try {
+                    const endpoint = isMain ? '/snapshot/annotated/mode2/' : '/snapshot/mode2/';
+                    const url = `${endpoint}${dir}?t=${Date.now()}`;
+                    const res = await fetch(url, { cache: 'no-store' });
+                    if (res.ok) {
+                        const blob = await res.blob();
+                        const burl = URL.createObjectURL(blob);
+                        await new Promise((resolve) => {
+                            img.onload = () => {
+                                // Match canvas size to image
+                                if (canvas.width !== img.naturalWidth) {
+                                    canvas.width  = img.naturalWidth  || canvas.offsetWidth  || 640;
+                                    canvas.height = img.naturalHeight || canvas.offsetHeight || 360;
+                                }
+                                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                                URL.revokeObjectURL(burl);
+                                resolve();
+                            };
+                            img.onerror = () => { URL.revokeObjectURL(burl); resolve(); };
+                            img.src = burl;
+                        });
                     }
-                }
-            });
-        })
-        .catch(() => { });
-}
-
-// Load ROIs when entering Mode 2
-const _origSwitchMode = switchMode;
-switchMode = function (mode) {
-    _origSwitchMode(mode);
-    if (mode === 2) {
-        setTimeout(loadM2ROIsFromBackend, 300);
+                } catch(e) { /* network hiccup, just retry */ }
+                await new Promise(r => setTimeout(r, 33)); // ~30 fps
+            }
+        }
+        poll();
     }
-};
 
+    // Start all pollers immediately on DOM ready (no blocking connections)
+    document.addEventListener('DOMContentLoaded', () => {
+        CANVASES.forEach(({ id, dir }) => startPoller(id, dir));
+    });
+
+    // Also auto-size canvases to their container via CSS
+    const style = document.createElement('style');
+    style.textContent = `
+        canvas.m2-snap-canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+            object-fit: contain;
+            background: #000;
+        }
+    `;
+    document.head.appendChild(style);
+})();
