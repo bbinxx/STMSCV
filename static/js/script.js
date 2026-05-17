@@ -905,12 +905,34 @@ function pollStats() {
             if (ct) ct.textContent = timer + 's';
             if (ph_b) ph_b.style.width = Math.min(100, (timer / (cycleDur || 30)) * 100) + '%';
 
+            const m2scores = data.mode2_scores || {};
+            const peds = data.peds || {};
+            let anyPed = false;
+
             ['North', 'South', 'East', 'West'].forEach(l => {
                 const el = document.getElementById('count-' + l);
                 if (el) el.textContent = counts[l] || 0;
+                
                 const card = document.getElementById('lane-card-' + l);
                 if (card) card.classList.toggle('active', l === greenLane);
+
+                // Emergency Indicators (Dashboard & Mode 2)
+                const isEmerg = (m2scores[l] || 0) > 0;
+                const emInd = document.getElementById('emerg-' + l);
+                if (emInd) emInd.classList.toggle('active', isEmerg);
+                
+                const emIndM2 = document.getElementById('m2-emerg-' + l);
+                if (emIndM2) emIndM2.classList.toggle('active', isEmerg);
+                
+                const emIndTL = document.getElementById('tl-emerg-' + l);
+                if (emIndTL) emIndTL.classList.toggle('active', isEmerg);
+
+                if ((peds[l] || 0) > 0) anyPed = true;
             });
+
+            // Global Pedestrian Indicator
+            const pedInd = document.getElementById('ped-indicator');
+            if (pedInd) pedInd.classList.toggle('active', anyPed);
 
             // TL visual states
             const tl_states = data.tl_states || {};

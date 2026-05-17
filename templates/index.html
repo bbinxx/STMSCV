@@ -274,6 +274,25 @@
         .lane-card.active .lane-num { color: var(--green); }
         .lane-lbl { font-family: 'Share Tech Mono', monospace; font-size: calc(var(--fs-base) - 4px); color: var(--text-dim); letter-spacing: 0.15em; text-transform: uppercase; }
 
+        /* Status Indicators */
+        .status-indicators { display: flex; gap: 6px; margin-top: 4px; align-items: center; justify-content: center; }
+        .indicator { 
+            display: flex; align-items: center; gap: 5px;
+        }
+        .indicator::before {
+            content: ""; display: block;
+            width: 12px; height: 12px; border-radius: 50%; background: #1a1a1a; 
+            border: 2px solid #444; transition: all 0.3s;
+        }
+        .indicator::after {
+            content: attr(data-label); font-family: 'Share Tech Mono', monospace; 
+            font-size: 11px; color: #666; transition: color 0.3s; font-weight: bold;
+        }
+        .indicator.active.emerg::before { background: var(--red); box-shadow: 0 0 12px var(--red); border-color: #fff; }
+        .indicator.active.emerg::after { color: var(--red); text-shadow: 0 0 8px rgba(240,48,80,0.6); }
+        .indicator.active.ped::before { background: var(--cyan); box-shadow: 0 0 12px var(--cyan); border-color: #fff; }
+        .indicator.active.ped::after { color: var(--cyan); text-shadow: 0 0 8px rgba(0,240,255,0.6); }
+
         /* ===== PHASE BAR ===== */
         .phase-bar-wrap { margin-bottom: 12px; }
         .phase-bar-head { display: flex; justify-content: space-between; margin-bottom: 5px; }
@@ -704,14 +723,6 @@
 <!-- ===== TOPBAR ===== -->
 <header id="topbar">
     <div class="tb-stat">
-        <span class="tb-stat-label">CONTROLLER</span>
-        <span class="tb-stat-value red" id="tb-control-status">OFFLINE</span>
-    </div>
-    <div class="tb-stat" style="border-left:1px solid var(--border);">
-        <span class="tb-stat-label">SYSTEM</span>
-        <span class="tb-stat-value red" id="tb-system-status">STOPPED</span>
-    </div>
-    <div class="tb-stat" style="border-left:1px solid var(--border);">
         <span class="tb-stat-label">DETECTION</span>
         <span class="tb-stat-value" id="tb-detect-status" style="color:var(--text-dim)">INACTIVE</span>
     </div>
@@ -723,9 +734,9 @@
         <span class="tb-stat-label">CYCLE TIMER</span>
         <span class="tb-stat-value" id="tb-cycle-timer">--s</span>
     </div>
-    <div class="tb-stat" style="border-left:1px solid var(--border);">
-        <span class="tb-stat-label">TOTAL VEH</span>
-        <span class="tb-stat-value" id="tb-total-veh">0</span>
+    <div class="tb-item">
+        <span class="tb-label">TOTAL VEHICLES</span>
+        <span class="tb-stat-value yellow" id="tb-total-veh">0</span>
     </div>
     <div class="tb-stat" style="border-left:1px solid var(--border);">
         <span class="tb-stat-label">HOST</span>
@@ -760,10 +771,34 @@
         <div class="fwin-body">
             <div class="section-head">LANE VEHICLE COUNTS</div>
             <div class="lane-grid">
-                <div class="lane-card" id="lane-card-North"><span class="lane-num" id="count-North">0</span><span class="lane-lbl">NORTH</span></div>
-                <div class="lane-card" id="lane-card-South"><span class="lane-num" id="count-South">0</span><span class="lane-lbl">SOUTH</span></div>
-                <div class="lane-card" id="lane-card-East"> <span class="lane-num" id="count-East">0</span> <span class="lane-lbl">EAST</span></div>
-                <div class="lane-card" id="lane-card-West"> <span class="lane-num" id="count-West">0</span> <span class="lane-lbl">WEST</span></div>
+                <div class="lane-card" id="lane-card-North">
+                    <span class="lane-num" id="count-North">0</span>
+                    <span class="lane-lbl">NORTH</span>
+                    <div class="status-indicators">
+                        <div class="indicator emerg" id="emerg-North" data-label="EMERG"></div>
+                    </div>
+                </div>
+                <div class="lane-card" id="lane-card-South">
+                    <span class="lane-num" id="count-South">0</span>
+                    <span class="lane-lbl">SOUTH</span>
+                    <div class="status-indicators">
+                        <div class="indicator emerg" id="emerg-South" data-label="EMERG"></div>
+                    </div>
+                </div>
+                <div class="lane-card" id="lane-card-East"> 
+                    <span class="lane-num" id="count-East">0</span> 
+                    <span class="lane-lbl">EAST</span>
+                    <div class="status-indicators">
+                        <div class="indicator emerg" id="emerg-East" data-label="EMERG"></div>
+                    </div>
+                </div>
+                <div class="lane-card" id="lane-card-West"> 
+                    <span class="lane-num" id="count-West">0</span> 
+                    <span class="lane-lbl">WEST</span>
+                    <div class="status-indicators">
+                        <div class="indicator emerg" id="emerg-West" data-label="EMERG"></div>
+                    </div>
+                </div>
             </div>
             <div class="section-head">PHASE TIMER</div>
             <div class="phase-bar-wrap">
@@ -941,18 +976,22 @@
             <div class="tl-visual">
                 <div class="tl-unit">
                     <div class="tl-lights"><div class="tl-light lit-red" id="tl-r-North"></div><div class="tl-light" id="tl-y-North"></div><div class="tl-light" id="tl-g-North"></div></div>
+                    <div class="status-indicators" style="justify-content:center; margin-top:2px; margin-bottom:2px;"><div class="indicator emerg" id="tl-emerg-North" data-label="EMERG"></div></div>
                     <span class="tl-name">NORTH</span><span class="tl-id" id="tl-id-North">--</span>
                 </div>
                 <div class="tl-unit">
                     <div class="tl-lights"><div class="tl-light lit-red" id="tl-r-South"></div><div class="tl-light" id="tl-y-South"></div><div class="tl-light" id="tl-g-South"></div></div>
+                    <div class="status-indicators" style="justify-content:center; margin-top:2px; margin-bottom:2px;"><div class="indicator emerg" id="tl-emerg-South" data-label="EMERG"></div></div>
                     <span class="tl-name">SOUTH</span><span class="tl-id" id="tl-id-South">--</span>
                 </div>
                 <div class="tl-unit">
                     <div class="tl-lights"><div class="tl-light lit-red" id="tl-r-East"></div><div class="tl-light" id="tl-y-East"></div><div class="tl-light" id="tl-g-East"></div></div>
+                    <div class="status-indicators" style="justify-content:center; margin-top:2px; margin-bottom:2px;"><div class="indicator emerg" id="tl-emerg-East" data-label="EMERG"></div></div>
                     <span class="tl-name">EAST</span><span class="tl-id" id="tl-id-East">--</span>
                 </div>
                 <div class="tl-unit">
                     <div class="tl-lights"><div class="tl-light lit-red" id="tl-r-West"></div><div class="tl-light" id="tl-y-West"></div><div class="tl-light" id="tl-g-West"></div></div>
+                    <div class="status-indicators" style="justify-content:center; margin-top:2px; margin-bottom:2px;"><div class="indicator emerg" id="tl-emerg-West" data-label="EMERG"></div></div>
                     <span class="tl-name">WEST</span><span class="tl-id" id="tl-id-West">--</span>
                 </div>
             </div>
@@ -1043,6 +1082,9 @@
         <div class="m2-toggle-wrap">
             <span class="m2-toggle-label">MODE:</span>
             <button class="m2-mode-btn" id="m2-mode-toggle" onclick="toggleControlMode()">FIXED CYCLE</button>
+        </div>
+        <div class="m2-toggle-wrap" style="margin-left: 10px; gap: 8px;">
+            <div class="indicator ped" id="ped-indicator" data-label="PED"></div>
         </div>
         <div class="m2-tab-pipe"></div>
 
@@ -1195,6 +1237,9 @@
                                 <div class="m2-tl-bulb" id="m2-tl-g-North"></div>
                             </div>
                         </div>
+                        <div class="status-indicators" style="justify-content: center; margin: 5px 0;">
+                            <div class="indicator emerg" id="m2-emerg-North" data-label="EMERG"></div>
+                        </div>
                         <div class="m2-tl-countdown-wrap"><div class="m2-tl-countdown-bar" id="m2-cd-North"></div></div>
                         <div class="m2-tl-stats">
                             <span class="m2-count-lbl" id="m2-cnt-North">0</span>
@@ -1226,6 +1271,9 @@
                                 <div class="m2-tl-bulb" id="m2-tl-y-West"></div>
                                 <div class="m2-tl-bulb" id="m2-tl-g-West"></div>
                             </div>
+                        </div>
+                        <div class="status-indicators" style="justify-content: center; margin: 5px 0;">
+                            <div class="indicator emerg" id="m2-emerg-West" data-label="EMERG"></div>
                         </div>
                         <div class="m2-tl-countdown-wrap"><div class="m2-tl-countdown-bar" id="m2-cd-West"></div></div>
                         <div class="m2-tl-stats">
@@ -1259,6 +1307,9 @@
                                 <div class="m2-tl-bulb" id="m2-tl-g-South"></div>
                             </div>
                         </div>
+                        <div class="status-indicators" style="justify-content: center; margin: 5px 0;">
+                            <div class="indicator emerg" id="m2-emerg-South" data-label="EMERG"></div>
+                        </div>
                         <div class="m2-tl-countdown-wrap"><div class="m2-tl-countdown-bar" id="m2-cd-South"></div></div>
                         <div class="m2-tl-stats">
                             <span class="m2-count-lbl" id="m2-cnt-South">0</span>
@@ -1290,6 +1341,9 @@
                                 <div class="m2-tl-bulb" id="m2-tl-y-East"></div>
                                 <div class="m2-tl-bulb" id="m2-tl-g-East"></div>
                             </div>
+                        </div>
+                        <div class="status-indicators" style="justify-content: center; margin: 5px 0;">
+                            <div class="indicator emerg" id="m2-emerg-East" data-label="EMERG"></div>
                         </div>
                         <div class="m2-tl-countdown-wrap"><div class="m2-tl-countdown-bar" id="m2-cd-East"></div></div>
                         <div class="m2-tl-stats">

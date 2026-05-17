@@ -181,6 +181,8 @@ external_feed_src = ""           # URL being read by worker
 # Global states for Flask streaming and tracking
 latest_frame = None
 lane_counts = {"North": 0, "South": 0, "East": 0, "West": 0}
+lane_peds   = {"North": 0, "South": 0, "East": 0, "West": 0}
+
 last_process_time = 0.0
 
 # Global blank frame for standby
@@ -274,12 +276,13 @@ def save_mode2_rois(rois_dict):
 
 mode2_cam_config = load_mode2_cameras()   # {lane: source_str}
 mode2_rois       = load_mode2_rois()      # {lane: np.array (4,2)}
-mode2_frames     = {d: None for d in DIRECTIONS}  # {lane: jpeg_bytes (with detection overlay)}
-mode2_raw_frames = {}                     # {lane: raw np frame (for detection)}
-mode2_raw_jpeg   = {}                     # {lane: jpeg_bytes of raw frame (for fast preview)}
-mode2_counts     = {d: 0 for d in DIRECTIONS}  # {lane: int}
-mode2_scores     = {d: 0 for d in DIRECTIONS}  # {lane: int} weighted scores (emergencies)
-mode2_heavies    = {d: 0 for d in DIRECTIONS}  # {lane: int} heavy vehicles
+mode2_frames     = {d: None for d in DIRECTIONS}
+mode2_raw_frames = {d: None for d in DIRECTIONS}
+mode2_raw_jpeg   = {d: None for d in DIRECTIONS}
+mode2_counts     = {d: 0 for d in DIRECTIONS}
+mode2_scores     = {d: 0 for d in DIRECTIONS}
+mode2_peds       = {d: 0 for d in DIRECTIONS}
+mode2_heavies    = {d: 0 for d in DIRECTIONS}
 mode2_captures   = {}  # {lane: cv2.VideoCapture or urllib stream}
 mode2_threads    = {}  # {lane: Thread}
 
@@ -341,7 +344,7 @@ def _apply_detection_overlay(direction, frame):
     Runs YOLO detection on `frame` within the direction's ROI (if set).
     Updates mode2_counts[direction]. Returns annotated frame bytes.
     """
-    global model, mode2_rois, mode2_counts, mode2_scores, mode2_heavies, last_process_time
+    global model, mode2_rois, mode2_counts, mode2_scores, mode2_heavies, mode2_peds, last_process_time
 
     last_process_time = time.time()
 
@@ -349,14 +352,16 @@ def _apply_detection_overlay(direction, frame):
     if direction in mode2_rois:
         roi_map[direction] = mode2_rois[direction]
 
-    annotated, counts, heavies, emergencies = process_frame(frame.copy(), model, roi_map)
+    annotated, counts, heavies, emergencies, pedestrians = process_frame(frame.copy(), model, roi_map)
     if roi_map:
         mode2_counts[direction] = counts.get(direction, 0)
         mode2_scores[direction] = emergencies.get(direction, 0)
+        mode2_peds[direction] = pedestrians.get(direction, 0)
         mode2_heavies[direction] = heavies.get(direction, 0)
     else:
         mode2_counts[direction] = 0
         mode2_scores[direction] = 0
+        mode2_peds[direction] = 0
         mode2_heavies[direction] = 0
 
     _, buf = cv2.imencode('.jpg', annotated)
@@ -463,7 +468,7 @@ def start_mode2_direction(direction):
 
 def mode2_detection_worker(direction):
     """Background detection for Mode 2 — runs YOLO for counting only, not display."""
-    global mode2_frames, mode2_raw_frames, mode2_counts, mode2_scores, mode2_heavies
+    global mode2_frames, mode2_raw_frames, mode2_counts, mode2_scores, mode2_heavies, mode2_peds
     print(f"[MODE2] Detection worker started for {direction}", flush=True)
     while True:
         try:
@@ -697,7 +702,7 @@ def get_traffic_lights(world):
 # --- 3. YOLOv8 CV ENGINE & PROCESSING LOOP ---
 def vision_processing_loop():
     """CONTROL camera mode: process frames and control lights"""
-    global latest_frame, lane_counts, last_process_time, system_started
+    global latest_frame, lane_counts, lane_peds, last_process_time, system_started
     print("[INIT] Vision Processing Thread Started", flush=True)
     
     while True:
@@ -719,17 +724,21 @@ def vision_processing_loop():
                 frame = img_data.copy()
                 
                 rois_to_use = ROIS.copy() if ROI_ENABLED else {}
-                frame, current_lane_counts, current_lane_scores = process_frame(frame, model, rois_to_use)
+                annotated, counts, heavies, emergencies, peds = process_frame(
+                    frame.copy(), model, ROIS if ROI_ENABLED else {},
+                    conf_thres=0.25, iou_thres=0.45
+                )
                 
                 if ROI_ENABLED:
-                    lane_counts = current_lane_counts
+                    lane_counts = counts
+                    lane_peds = peds
                 else:
                     lane_counts = {"North": 0, "South": 0, "East": 0, "West": 0}
-                    current_lane_scores = {"North": 0, "South": 0, "East": 0, "West": 0}
+                    lane_peds = {"North": 0, "South": 0, "East": 0, "West": 0}
                 
                 last_process_time = time.time()
                 
-                ret, buffer = cv2.imencode('.jpg', frame)
+                ret, buffer = cv2.imencode('.jpg', annotated)
                 if ret:
                     latest_frame = buffer.tobytes()
                 else:
@@ -833,6 +842,7 @@ def api_lane_counts():
     # Use the active count source for the current control mode.
     control_mode = auto_data.get("control_mode", 1)
     counts = {d: mode2_counts.get(d, 0) for d in DIRECTIONS} if control_mode == 2 else lane_counts
+    peds = {d: mode2_peds.get(d, 0) for d in DIRECTIONS} if control_mode == 2 else lane_peds
 
     # Real-time traffic light states from automation_state
     tl_states = {l: "red" for l in DIRECTIONS}
@@ -846,6 +856,7 @@ def api_lane_counts():
 
     return json.dumps({
         "counts": counts,
+        "peds": peds,
         "green_lane": green_lane,
         "tl_states": tl_states,
         "timer": remaining,
@@ -855,6 +866,8 @@ def api_lane_counts():
         "detect_status": is_detecting,
         "feed_status": "ONLINE" if is_live_feed_ready() else "NO SIGNAL",
         "mode2_counts": {d: mode2_counts.get(d, 0) for d in DIRECTIONS},
+        "mode2_scores": {d: mode2_scores.get(d, 0) for d in DIRECTIONS},
+        "mode2_peds": {d: mode2_peds.get(d, 0) for d in DIRECTIONS},
         "mode2_thread_health": {d: (d in mode2_threads and mode2_threads[d].is_alive()) for d in DIRECTIONS},
         "control_mode": control_mode
     })

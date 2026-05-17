@@ -6,7 +6,7 @@ ALL_VEHICLE_CLASSES = None  # None => include every class reported by the model
 
 CLASS_WEIGHT = {1: 1, 2: 2, 3: 1, 5: 3, 6: 3, 7: 3, 8: 2}  # heavier vehicles raise the score more
 
-VEHICLE_KEYWORDS = ['bicycle', 'car', 'motorcycle', 'bus', 'train', 'truck', 'boat', 'van', 'taxi', 'ambulance', 'scooter', 'auto-rickshaw']
+VEHICLE_KEYWORDS = ['bicycle', 'car', 'motorcycle', 'bus', 'train', 'truck', 'boat', 'van', 'taxi', 'ambulance', 'scooter', 'auto-rickshaw', 'person']
 
 DETECTION_IMG_SIZE = 640  # increased for higher accuracy (better for bikes/small objects)
 
@@ -22,6 +22,7 @@ def process_frame(frame, model, rois, conf_thres=0.15, iou_thres=0.45, img_size=
     lane_counts = {k: 0 for k in rois.keys()}
     heavy_counts = {k: 0 for k in rois.keys()}
     emergency_counts = {k: 0 for k in rois.keys()}
+    pedestrian_counts = {k: 0 for k in rois.keys()}
 
     # ── Draw ROI overlays on the full frame ───────────────────────────────────
     if rois:
@@ -38,7 +39,7 @@ def process_frame(frame, model, rois, conf_thres=0.15, iou_thres=0.45, img_size=
         cv2.addWeighted(overlay, 0.15, frame, 0.85, 0, frame)
 
     if model is None or not rois:
-        return frame, lane_counts, heavy_counts, emergency_counts
+        return frame, lane_counts, heavy_counts, emergency_counts, pedestrian_counts
 
     # ── Thread-safe YOLO lock ─────────────────────────────────────────────────
     if not hasattr(model, _YOLO_LOCK_ATTR):
@@ -80,6 +81,7 @@ def process_frame(frame, model, rois, conf_thres=0.15, iou_thres=0.45, img_size=
             # Heavy vehicles: bus, truck, train, boat (classes 5,6,7,8)
             is_heavy = cls in [5, 6, 7, 8]
             is_emergency = any(kw in cls_name for kw in ['ambulance', 'fire', 'emergency', 'police'])
+            is_pedestrian = 'person' in cls_name
 
             # Anchor check
             fcx = (cx1 + cx2) / 2.0
@@ -102,6 +104,8 @@ def process_frame(frame, model, rois, conf_thres=0.15, iou_thres=0.45, img_size=
                         heavy_counts[lane_name] += 1
                     if is_emergency:
                         emergency_counts[lane_name] += 1
+                    if is_pedestrian:
+                        pedestrian_counts[lane_name] += 1
                     break 
             
             if matched_lane:
@@ -122,7 +126,7 @@ def process_frame(frame, model, rois, conf_thres=0.15, iou_thres=0.45, img_size=
                 cv2.putText(frame, label, (cx1, cy1 - 10),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
-    return frame, lane_counts, heavy_counts, emergency_counts
+    return frame, lane_counts, heavy_counts, emergency_counts, pedestrian_counts
 
 # --- Consolidated Traffic Control State ---
 automation_state = {
